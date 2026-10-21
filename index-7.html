@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ระบบตรวจจับหมวกกันน็อก</title>
+<style>
+  :root { --bg:#0f172a; --card:#1e293b; --text:#e2e8f0; --muted:#94a3b8; --ok:#22c55e; --bad:#ef4444; --accent:#3b82f6; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, "Noto Sans Thai", sans-serif; background:var(--bg); color:var(--text); }
+  main { max-width: 900px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 1.4rem; margin: 8px 0 4px; }
+  p.sub { color: var(--muted); margin: 0 0 16px; }
+  .stage { position: relative; background:#000; border-radius: 12px; overflow: hidden; aspect-ratio: 4/3; }
+  video, canvas { position:absolute; inset:0; width:100%; height:100%; object-fit: contain; }
+  .row { display:flex; flex-wrap:wrap; gap:8px; margin: 12px 0; }
+  button, .btn { background:var(--accent); color:#fff; border:0; border-radius:8px; padding:10px 16px; font-size:1rem; cursor:pointer; text-decoration:none; display:inline-block; }
+  button.secondary, .btn.secondary { background:var(--card); border:1px solid #334155; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .card { background:var(--card); border-radius:12px; padding:12px 16px; margin-top:12px; }
+  .stats { display:flex; gap:16px; flex-wrap:wrap; }
+  .stat b { font-size:1.5rem; display:block; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); }
+  #status { color: var(--muted); font-size:.9rem; }
+  label { font-size:.9rem; color:var(--muted); }
+  input[type=range] { vertical-align: middle; }
+</style>
+</head>
+<body>
+<main>
+  <h1>🪖 ระบบตรวจจับหมวกกันน็อก</h1>
+  <p class="sub">ตรวจจับรถมอเตอร์ไซค์ก่อน แล้วค่อยตรวจหมวกของคนขับ ประมวลผลในเบราว์เซอร์ทั้งหมด ภาพจากกล้องไม่ถูกส่งไปที่เซิร์ฟเวอร์</p>
+
+  <div class="stage">
+    <video id="video" playsinline muted></video>
+    <canvas id="overlay"></canvas>
+  </div>
+
+  <div class="row">
+    <button id="startBtn">เปิดกล้อง</button>
+    <button id="stopBtn" class="secondary" disabled>หยุด</button>
+    <select id="cameraSel" class="secondary" style="padding:10px;border-radius:8px;background:#1e293b;color:#e2e8f0;border:1px solid #334155"></select>
+  </div>
+
+  <div class="card stats">
+    <div class="stat"><b class="ok" id="nHelmet">0</b>สวมหมวก</div>
+    <div class="stat"><b class="bad" id="nNo">0</b>ไม่สวมหมวก</div>
+    <div class="stat"><b id="fps">0</b>FPS</div>
+  </div>
+
+  <div class="card">
+    <label>ความมั่นใจขั้นต่ำ: <span id="confVal">0.50</span>
+      <input id="conf" type="range" min="0.1" max="0.9" step="0.05" value="0.5">
+    </label><br>
+    <label><input id="beep" type="checkbox" checked> เสียงเตือนเมื่อพบไม่สวมหมวก</label>
+    <div class="row">
+      <label class="btn secondary" style="margin:0">เลือกไฟล์โมเดล (.onnx)
+        <input id="modelFile" type="file" accept=".onnx" hidden>
+      </label>
+      <a class="btn secondary" href="helmet-detector-local.zip" download>⬇ ดาวน์โหลดโปรแกรมสำหรับรันในเครื่อง</a>
+      <a class="btn secondary" href="best.pt" download>⬇ ดาวน์โหลดโมเดล (best.pt)</a>
+    </div>
+    <div id="status">กำลังโหลดโมเดล...</div>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.3/dist/ort.min.js"></script>
+<script>
+// ===== ตั้งค่า =====
+const VEH_URL = "yolov8n.onnx";         // โมเดลจับรถ/คน (COCO) ใช้ของสำเร็จรูป ไม่ต้องเทรน
+const MODEL_URL = "best.onnx";          // โมเดลหมวกกันน็อกที่เทรนเอง
+const CLASS_NAMES = ["helmet detect", "helmet not detect"];  // ลำดับต้องตรงกับ data.yaml ตอนเทรน
+const NO_HELMET = "helmet not detect";                        // ชื่อคลาส "ไม่สวมหมวก"
+const INPUT = 640, IOU_THRESH = 0.45;
+
+ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.3/dist/";
+
+const $ = id => document.getElementById(id);
+const video = $("video"), canvas = $("overlay"), ctx = canvas.getContext("2d");
+const work = document.createElement("canvas"); work.width = work.height = INPUT;
+const wctx = work.getContext("2d", { willReadFrequently: true });
+
+let vehSession = null, session = null, stream = null, running = false, lastBeep = 0;
+
+function setStatus(t) { $("status").textContent = t; }
+
+async function loadModel(source) {
+  try {
+    setStatus("กำลังโหลดโมเดล...");
+    session = await ort.InferenceSession.create(source, { executionProviders: ["wasm"] });
+    setStatus("โมเดลพร้อมใช้งาน ✔");
+  } catch (e) {
+    session = null;
+    setStatus("ยังไม่พบโมเดล: วางไฟล์ไว้ที่ " + MODEL_URL + " หรือเลือกไฟล์ .onnx ด้วยตนเอง");
+  }
+}
+
+async function loadVeh() {
+  try { vehSession = await ort.InferenceSession.create(VEH_URL, { executionProviders: ["wasm"] }); }
+  catch (e) { vehSession = null; setStatus("ยังไม่พบโมเดลจับรถ: วาง yolov8n.onnx ไว้ที่ " + VEH_URL); }
+}
+
+async function listCameras() {
+  try {
+    const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "videoinput");
+    $("cameraSel").innerHTML = devs.map((d, i) => `<option value="${d.deviceId}">${d.label || "กล้อง " + (i + 1)}</option>`).join("");
+  } catch {}
+}
+
+async function start() {
+  try {
+    const id = $("cameraSel").value;
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: id ? { deviceId: { exact: id }, width: 1280, height: 720 } : { width: 1280, height: 720 }
+    });
+    video.srcObject = stream;
+    await video.play();
+    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+    await listCameras();
+    running = true;
+    $("startBtn").disabled = true; $("stopBtn").disabled = false;
+    loop();
+  } catch (e) {
+    setStatus("เปิดกล้องไม่ได้: " + e.message + " (ต้องใช้ผ่าน https หรือ localhost และอนุญาตกล้อง)");
+  }
+}
+
+function stop() {
+  running = false;
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  $("startBtn").disabled = false; $("stopBtn").disabled = true;
+}
+
+function prep(src, sx, sy, sw, sh) {
+  const scale = Math.min(INPUT / sw, INPUT / sh);
+  const nw = Math.round(sw * scale), nh = Math.round(sh * scale);
+  const px = (INPUT - nw) / 2, py = (INPUT - nh) / 2;
+  wctx.fillStyle = "rgb(114,114,114)"; wctx.fillRect(0, 0, INPUT, INPUT);
+  wctx.drawImage(src, sx, sy, sw, sh, px, py, nw, nh);
+  const d = wctx.getImageData(0, 0, INPUT, INPUT).data;
+  const n = INPUT * INPUT, f = new Float32Array(3 * n);
+  for (let i = 0; i < n; i++) {
+    f[i] = d[i * 4] / 255; f[n + i] = d[i * 4 + 1] / 255; f[2 * n + i] = d[i * 4 + 2] / 255;
+  }
+  return { tensor: new ort.Tensor("float32", f, [1, 3, INPUT, INPUT]), scale, px, py };
+}
+
+function iou(a, b) {
+  const x1 = Math.max(a.x1, b.x1), y1 = Math.max(a.y1, b.y1);
+  const x2 = Math.min(a.x2, b.x2), y2 = Math.min(a.y2, b.y2);
+  const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+  const ua = (a.x2 - a.x1) * (a.y2 - a.y1) + (b.x2 - b.x1) * (b.y2 - b.y1) - inter;
+  return inter / ua;
+}
+
+function overlapOfA(a, b) {   // สัดส่วนพื้นที่ของ a ที่ซ้อนกับ b
+  const w = Math.min(a.x2, b.x2) - Math.max(a.x1, b.x1);
+  const h = Math.min(a.y2, b.y2) - Math.max(a.y1, b.y1);
+  return Math.max(0, w) * Math.max(0, h) / ((a.x2 - a.x1) * (a.y2 - a.y1));
+}
+
+function postprocess(out, scale, px, py, conf) {
+  const dims = out.dims, data = out.data;          // [1, 4+nc, N]
+  const nc = dims[1] - 4, N = dims[2];
+  const boxes = [];
+  for (let i = 0; i < N; i++) {
+    let best = 0, cls = 0;
+    for (let c = 0; c < nc; c++) {
+      const s = data[(4 + c) * N + i];
+      if (s > best) { best = s; cls = c; }
+    }
+    if (best < conf) continue;
+    const cx = data[i], cy = data[N + i], w = data[2 * N + i], h = data[3 * N + i];
+    boxes.push({
+      x1: (cx - w / 2 - px) / scale, y1: (cy - h / 2 - py) / scale,
+      x2: (cx + w / 2 - px) / scale, y2: (cy + h / 2 - py) / scale, score: best, cls
+    });
+  }
+  boxes.sort((a, b) => b.score - a.score);
+  const keep = [];
+  for (const b of boxes) if (keep.every(k => k.cls !== b.cls || iou(k, b) < IOU_THRESH)) keep.push(b);
+  return keep;
+}
+
+// รันโมเดลบนส่วนหนึ่งของภาพ แล้วคืนกรอบในพิกัดภาพเต็ม
+async function detect(sess, src, sx, sy, sw, sh, conf) {
+  const { tensor, scale, px, py } = prep(src, sx, sy, sw, sh);
+  const res = await sess.run({ [sess.inputNames[0]]: tensor });
+  return postprocess(res[sess.outputNames[0]], scale, px, py, conf)
+    .map(b => ({ ...b, x1: b.x1 + sx, x2: b.x2 + sx, y1: b.y1 + sy, y2: b.y2 + sy }));
+}
+
+// ขั้นที่ 1: หารถมอเตอร์ไซค์ + คน -> จับคู่คนที่ซ้อนอยู่บนรถ
+// ขั้นที่ 2: ตัดภาพคนขับ -> ตรวจหมวกกันน็อก
+async function analyze(conf) {
+  const W = video.videoWidth, H = video.videoHeight;
+  const veh = await detect(vehSession, video, 0, 0, W, H, 0.4);
+  const bikes = veh.filter(d => d.cls === 3), persons = veh.filter(d => d.cls === 0);
+  const riders = [];
+  for (const p of persons) {
+    let bi = -1, bo = 0.25;
+    bikes.forEach((b, i) => { const o = overlapOfA(p, b); if (o > bo) { bo = o; bi = i; } });
+    if (bi >= 0) riders.push({ box: p, bike: bi });
+  }
+  for (const r of riders.slice(0, 6)) {
+    const pw = (r.box.x2 - r.box.x1) * 0.1, ph = (r.box.y2 - r.box.y1) * 0.1;
+    const x1 = Math.max(0, r.box.x1 - pw), y1 = Math.max(0, r.box.y1 - ph);
+    const x2 = Math.min(W, r.box.x2 + pw), y2 = Math.min(H, r.box.y2 + ph);
+    r.status = "unknown";
+    if (x2 - x1 < 24 || y2 - y1 < 24) continue;
+    const hd = await detect(session, video, x1, y1, x2 - x1, y2 - y1, conf);
+    if (hd.length) r.status = CLASS_NAMES[hd[0].cls] === NO_HELMET ? "no" : "yes";
+  }
+  return { bikes, riders };
+}
+
+function draw({ bikes, riders }) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.lineWidth = Math.max(2, canvas.width / 320);
+  ctx.font = `${Math.max(14, canvas.width / 50)}px sans-serif`;
+  const box = (d, color, label) => {
+    ctx.strokeStyle = color; ctx.fillStyle = color;
+    ctx.strokeRect(d.x1, d.y1, d.x2 - d.x1, d.y2 - d.y1);
+    if (label) ctx.fillText(label, d.x1 + 4, Math.max(16, d.y1 - 6));
+  };
+  bikes.forEach(b => box(b, "#3b82f6", "motorcycle"));
+  let ok = 0, bad = 0;
+  for (const r of riders) {
+    if (r.status === "yes") { ok++; box(r.box, "#22c55e", "สวมหมวก"); }
+    else if (r.status === "no") { bad++; box(r.box, "#ef4444", "ไม่สวมหมวก"); }
+    else box(r.box, "#94a3b8", "ไม่ชัดเจน");
+  }
+  $("nHelmet").textContent = ok; $("nNo").textContent = bad;
+  if (bad && $("beep").checked && Date.now() - lastBeep > 3000) { lastBeep = Date.now(); beep(); }
+}
+
+function beep() {
+  try {
+    const a = new (window.AudioContext || window.webkitAudioContext)();
+    const o = a.createOscillator(); o.frequency.value = 880; o.connect(a.destination);
+    o.start(); setTimeout(() => { o.stop(); a.close(); }, 200);
+  } catch {}
+}
+
+async function loop() {
+  let frames = 0, t0 = performance.now();
+  while (running) {
+    if (session && vehSession && video.readyState >= 2) {
+      draw(await analyze(parseFloat($("conf").value)));
+      frames++;
+      const now = performance.now();
+      if (now - t0 > 1000) { $("fps").textContent = Math.round(frames * 1000 / (now - t0)); frames = 0; t0 = now; }
+    } else {
+      await new Promise(r => setTimeout(r, 200));
+    }
+  }
+}
+
+$("startBtn").onclick = start;
+$("stopBtn").onclick = stop;
+$("conf").oninput = e => $("confVal").textContent = parseFloat(e.target.value).toFixed(2);
+$("modelFile").onchange = async e => {
+  const f = e.target.files[0];
+  if (f) await loadModel(new Uint8Array(await f.arrayBuffer()));
+};
+loadVeh();
+loadModel(MODEL_URL);
+listCameras();
+</script>
+</body>
+</html>
