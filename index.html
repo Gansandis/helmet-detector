@@ -74,6 +74,7 @@
     background:var(--surface); border:1px solid var(--line); border-left-width:6px; border-left-color:var(--muted); font-weight:500; }
   .line[data-kind="run"] { border-left-color:var(--sign); }
   .line[data-kind="ok"] { border-left-color:var(--ok); }
+  .line[data-kind="err"] { border-left-color:var(--bad); background:color-mix(in srgb, var(--bad) 12%, var(--surface)); }
   .line[data-kind="bad"] { border-left-color:var(--bad); background:color-mix(in srgb, var(--bad) 12%, var(--surface)); color:var(--ink); font-weight:600; }
 
   .stats { display:grid; grid-template-columns:repeat(3,1fr); margin-top:12px; background:var(--surface);
@@ -203,6 +204,13 @@
           <input id="conf" type="range" min="0.1" max="0.9" step="0.05" value="0.5">
           <span style="color:var(--muted);font-size:.85rem">ค่าสูง ตรวจเข้มงวดขึ้นแต่อาจพลาดบางคน ค่าต่ำจับได้มากขึ้นแต่อาจเตือนผิด</span>
         </label>
+        <label>ความถี่ในการตรวจ
+          <select id="gap" class="cam" style="min-height:44px">
+            <option value="0">เร็วสุด (กินเครื่องมาก)</option>
+            <option value="250" selected>สมดุล</option>
+            <option value="700">ประหยัด (เหมาะกับมือถือเก่า)</option>
+          </select>
+        </label>
         <label class="inline"><input id="beep" type="checkbox" checked> เสียงเตือนเมื่อพบผู้ไม่สวมหมวก</label>
         <label class="btn ghost" style="cursor:pointer">เลือกไฟล์โมเดลหมวกเอง (.onnx)
           <input id="modelFile" type="file" accept=".onnx" hidden>
@@ -272,7 +280,20 @@ const CLASS_NAMES = ["helmet detect", "helmet not detect"];  // ลำดับ�
 const NO_HELMET = "helmet not detect";                        // ชื่อคลาส "ไม่สวมหมวก"
 const INPUT = 640, IOU_THRESH = 0.45;
 
-if (window.ort) ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.3/dist/";
+if (window.ort) {
+  ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.3/dist/";
+  ort.env.wasm.proxy = true;   // ให้โมเดลรันใน worker หน้าเว็บจะไม่ค้าง
+  ort.env.wasm.numThreads = Math.min(4, navigator.hardwareConcurrency || 1);
+}
+async function makeSession(src) {
+  const opt = { executionProviders: ["wasm"] };
+  try { return await ort.InferenceSession.create(src, opt); }
+  catch (e) {
+    if (!ort.env.wasm.proxy) throw e;
+    ort.env.wasm.proxy = false;                  // ลองใหม่แบบไม่ใช้ worker
+    return await ort.InferenceSession.create(src, opt);
+  }
+}
 
 const $ = id => document.getElementById(id);
 const video = $("video"), canvas = $("overlay"), ctx = canvas.getContext("2d");
@@ -288,7 +309,7 @@ function setLine(kind, text) { const l = $("line"); l.dataset.kind = kind; $("li
 async function loadModel(source) {
   chip("chipHel", "loading");
   try {
-    session = await ort.InferenceSession.create(source, { executionProviders: ["wasm"] });
+    session = await makeSession(source);
     chip("chipHel", "ready");
   } catch (e) {
     session = null; chip("chipHel", "error");
@@ -298,7 +319,7 @@ async function loadModel(source) {
 
 async function loadVeh() {
   chip("chipVeh", "loading");
-  try { vehSession = await ort.InferenceSession.create(VEH_URL, { executionProviders: ["wasm"] }); chip("chipVeh", "ready"); }
+  try { vehSession = await makeSession(VEH_URL); chip("chipVeh", "ready"); }
   catch (e) { vehSession = null; chip("chipVeh", "error"); setStatus("โหลดโมเดลจับรถไม่สำเร็จ: ตรวจสอบว่ามีไฟล์ " + VEH_URL + " อยู่ข้าง index.html"); }
 }
 
@@ -323,7 +344,7 @@ async function start() {
     running = true;
     $("idle").hidden = true;
     $("startBtn").disabled = true; $("stopBtn").disabled = false;
-    setLine("run", "กำลังตรวจจับ ยังไม่พบมอเตอร์ไซค์ในภาพ");
+    setLine("run", "กำลังเตรียมโมเดล ครั้งแรกอาจใช้เวลาสักครู่…");
     loop();
   } catch (e) {
     setStatus("เปิดกล้องไม่ได้: " + e.message + " ต้องเปิดผ่าน https และอนุญาตการใช้กล้องในเบราว์เซอร์");
@@ -457,15 +478,27 @@ function beep() {
 
 async function loop() {
   let frames = 0, t0 = performance.now();
-  while (running) {
-    if (session && vehSession && video.readyState >= 2) {
-      draw(await analyze(parseFloat($("conf").value)));
-      frames++;
-      const now = performance.now();
-      if (now - t0 > 1000) { $("fps").textContent = Math.round(frames * 1000 / (now - t0)); frames = 0; t0 = now; }
-    } else {
-      await new Promise(r => setTimeout(r, 200));
+  try {
+    while (running) {
+      if (session && vehSession && video.readyState >= 2) {
+        const t = performance.now();
+        const res = await analyze(parseFloat($("conf").value));
+        if (!running) break;      // ผู้ใช้กดหยุดระหว่างประมวลผล
+        draw(res);
+        frames++;
+        const now = performance.now();
+        if (now - t0 > 1000) { $("fps").textContent = (frames * 1000 / (now - t0)).toFixed(1); frames = 0; t0 = now; }
+        // เว้นช่วงให้เครื่องได้พัก ไม่ให้หน้าเว็บค้าง
+        await new Promise(r => setTimeout(r, Math.max(0, parseInt($("gap").value, 10) - (now - t))));
+      } else {
+        await new Promise(r => setTimeout(r, 200));
+      }
     }
+  } catch (e) {
+    console.error(e);
+    stop();
+    setLine("err", "ตรวจจับไม่สำเร็จ: " + (e && e.message ? e.message : e));
+    setStatus("เกิดข้อผิดพลาดระหว่างตรวจจับ: " + (e && e.message ? e.message : e));
   }
 }
 
