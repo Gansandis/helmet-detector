@@ -2,66 +2,265 @@
 <html lang="th">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ระบบตรวจจับหมวกกันน็อก</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ตรวจหมวกกันน็อก</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  :root { --bg:#0f172a; --card:#1e293b; --text:#e2e8f0; --muted:#94a3b8; --ok:#22c55e; --bad:#ef4444; --accent:#3b82f6; }
+  :root {
+    --bg:#E8E9EB; --surface:#FFFFFF; --ink:#1B1F24; --muted:#5B6470; --line:#D3D6DB;
+    --sign:#0A5BB5; --on-sign:#FFFFFF; --ok:#12803C; --bad:#C8261B; --warn:#B7791F;
+    --road:#1E2227; --on-road:#F3F4F6; --mark:#F2C200;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:#14171A; --surface:#1E2227; --ink:#E8EAED; --muted:#9AA3AE; --line:#323841;
+      --sign:#5AA2F0; --on-sign:#0B1620; --ok:#3DBE6D; --bad:#FF6B5E; --warn:#E0B04A;
+      --road:#0E1012; --on-road:#F3F4F6;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg:#14171A; --surface:#1E2227; --ink:#E8EAED; --muted:#9AA3AE; --line:#323841;
+    --sign:#5AA2F0; --on-sign:#0B1620; --ok:#3DBE6D; --bad:#FF6B5E; --warn:#E0B04A;
+    --road:#0E1012; --on-road:#F3F4F6;
+  }
   * { box-sizing: border-box; }
-  body { margin:0; font-family: system-ui, "Noto Sans Thai", sans-serif; background:var(--bg); color:var(--text); }
-  main { max-width: 900px; margin: 0 auto; padding: 16px; }
-  h1 { font-size: 1.4rem; margin: 8px 0 4px; }
-  p.sub { color: var(--muted); margin: 0 0 16px; }
-  .stage { position: relative; background:#000; border-radius: 12px; overflow: hidden; aspect-ratio: 4/3; }
-  video, canvas { position:absolute; inset:0; width:100%; height:100%; object-fit: contain; }
-  .row { display:flex; flex-wrap:wrap; gap:8px; margin: 12px 0; }
-  button, .btn { background:var(--accent); color:#fff; border:0; border-radius:8px; padding:10px 16px; font-size:1rem; cursor:pointer; text-decoration:none; display:inline-block; }
-  button.secondary, .btn.secondary { background:var(--card); border:1px solid #334155; }
-  button:disabled { opacity:.5; cursor:not-allowed; }
-  .card { background:var(--card); border-radius:12px; padding:12px 16px; margin-top:12px; }
-  .stats { display:flex; gap:16px; flex-wrap:wrap; }
-  .stat b { font-size:1.5rem; display:block; }
-  .ok { color: var(--ok); } .bad { color: var(--bad); }
-  #status { color: var(--muted); font-size:.9rem; }
-  label { font-size:.9rem; color:var(--muted); }
-  input[type=range] { vertical-align: middle; }
+  html { scroll-padding-top: 64px; }
+  body { margin:0; background:var(--bg); color:var(--ink); line-height:1.6;
+    font-family:"IBM Plex Sans Thai","Noto Sans Thai",system-ui,sans-serif; -webkit-text-size-adjust:100%; }
+  button, input, select { font:inherit; color:inherit; }
+  :focus-visible { outline:3px solid var(--sign); outline-offset:2px; }
+
+  /* ----- ส่วนหัว: ป้ายถนน + เส้นแบ่งเลน ----- */
+  header { background:var(--road); color:var(--on-road); padding:calc(env(safe-area-inset-top,0px) + 18px) 20px 20px; }
+  .wrap { max-width:880px; margin:0 auto; }
+  header h1 { margin:0; font-size:1.55rem; font-weight:700; line-height:1.25; }
+  header p { margin:4px 0 0; color:#B8BEC7; font-size:.95rem; }
+  .lane { height:6px; background:repeating-linear-gradient(90deg,var(--mark) 0 28px,transparent 28px 46px); }
+
+  /* ----- แถบเมนู ----- */
+  nav { position:sticky; top:0; z-index:5; background:var(--surface); border-bottom:1px solid var(--line); }
+  nav .wrap { display:flex; overflow-x:auto; padding:0 8px; scrollbar-width:none; }
+  nav button { flex:1 0 auto; background:none; border:0; padding:14px 16px; min-height:48px; cursor:pointer;
+    color:var(--muted); font-weight:500; border-bottom:3px solid transparent; white-space:nowrap; }
+  nav button[aria-selected="true"] { color:var(--sign); border-bottom-color:var(--sign); font-weight:600; }
+
+  main { max-width:880px; margin:0 auto; padding:16px 16px calc(env(safe-area-inset-bottom,0px) + 32px); }
+  .panel[hidden] { display:none; }
+  h2 { font-size:1.2rem; margin:0 0 4px; }
+  .lead { color:var(--muted); margin:0 0 16px; max-width:60ch; }
+
+  /* ----- สถานะโมเดล ----- */
+  .chips { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+  .chip { display:inline-flex; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--line);
+    border-radius:999px; padding:4px 12px; font-size:.85rem; color:var(--muted); }
+  .chip::before { content:""; width:9px; height:9px; border-radius:50%; background:var(--warn); }
+  .chip[data-state="ready"]::before { background:var(--ok); }
+  .chip[data-state="error"]::before { background:var(--bad); }
+  .chip em { font-style:normal; color:var(--ink); }
+
+  /* ----- เวทีกล้อง ----- */
+  .stage { position:relative; background:#000; border-radius:14px; overflow:hidden; aspect-ratio:4/3; }
+  .stage video, .stage canvas { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; }
+  .idle { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:10px; text-align:center; padding:24px; color:#C9CED6; background:#101316; }
+  .idle[hidden] { display:none; }
+  .idle svg { width:56px; height:56px; stroke:#8A93A0; }
+  .idle b { color:#fff; font-size:1.05rem; }
+
+  /* ----- แถบผลลัพธ์ ----- */
+  .line { display:flex; align-items:center; gap:10px; margin-top:12px; padding:12px 16px; border-radius:12px;
+    background:var(--surface); border:1px solid var(--line); border-left-width:6px; border-left-color:var(--muted); font-weight:500; }
+  .line[data-kind="run"] { border-left-color:var(--sign); }
+  .line[data-kind="ok"] { border-left-color:var(--ok); }
+  .line[data-kind="bad"] { border-left-color:var(--bad); background:color-mix(in srgb, var(--bad) 12%, var(--surface)); color:var(--ink); font-weight:600; }
+
+  .stats { display:grid; grid-template-columns:repeat(3,1fr); margin-top:12px; background:var(--surface);
+    border:1px solid var(--line); border-radius:12px; }
+  .stats > div { padding:12px 8px; text-align:center; }
+  .stats > div + div { border-left:1px solid var(--line); }
+  .stats b { display:block; font-size:1.8rem; line-height:1.1; font-variant-numeric:tabular-nums; }
+  .stats span { font-size:.82rem; color:var(--muted); }
+  .stats .ok b { color:var(--ok); } .stats .bad b { color:var(--bad); }
+
+  .actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+  .btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:48px; padding:0 20px;
+    border-radius:10px; border:1.5px solid var(--sign); background:var(--sign); color:var(--on-sign);
+    font-weight:600; cursor:pointer; text-decoration:none; }
+  .btn.ghost { background:transparent; color:var(--sign); }
+  .btn:disabled { opacity:.45; cursor:not-allowed; }
+  .actions .grow { flex:1 1 140px; }
+  select.cam[hidden] { display:none; }
+  select.cam { flex:1 1 180px; min-height:48px; border-radius:10px; border:1px solid var(--line); background:var(--surface); padding:0 12px; }
+
+  /* ----- สัญลักษณ์สี ----- */
+  .legend { display:flex; flex-wrap:wrap; gap:6px 16px; margin:14px 2px 0; font-size:.85rem; color:var(--muted); }
+  .legend i { display:inline-block; width:12px; height:12px; border-radius:3px; margin-right:6px; vertical-align:-1px; }
+
+  /* ----- ตั้งค่า / ถามตอบ ----- */
+  details { background:var(--surface); border:1px solid var(--line); border-radius:12px; margin-top:12px; }
+  details + details { margin-top:8px; }
+  summary { cursor:pointer; padding:14px 16px; font-weight:600; list-style:none; display:flex; justify-content:space-between; gap:12px; }
+  summary::-webkit-details-marker { display:none; }
+  summary::after { content:"+"; color:var(--muted); font-weight:400; font-size:1.3rem; line-height:1.2; }
+  details[open] > summary::after { content:"–"; }
+  .body { padding:0 16px 16px; color:var(--muted); }
+  .body p { margin:0 0 8px; max-width:62ch; }
+  .set { display:grid; gap:14px; padding:0 16px 16px; }
+  .set label { display:flex; flex-direction:column; gap:6px; font-size:.95rem; }
+  .set label.inline { flex-direction:row; align-items:center; gap:10px; }
+  .set input[type=range] { width:100%; accent-color:var(--sign); }
+  .msg { padding:0 16px 16px; color:var(--bad); font-size:.9rem; margin:0; }
+  .msg:empty { display:none; }
+
+  /* ----- วิธีทำงาน / ดาวน์โหลด ----- */
+  ol.steps { list-style:none; margin:0; padding:0; counter-reset:s; }
+  ol.steps li { counter-increment:s; position:relative; padding:0 0 22px 52px; }
+  ol.steps li::before { content:counter(s); position:absolute; left:0; top:0; width:36px; height:36px; border-radius:50%;
+    background:var(--road); color:var(--on-road); display:grid; place-items:center; font-weight:700; }
+  ol.steps li::after { content:""; position:absolute; left:17px; top:40px; bottom:4px; width:2px;
+    background:repeating-linear-gradient(var(--mark) 0 6px, transparent 6px 11px); }
+  ol.steps li:last-child { padding-bottom:0; } ol.steps li:last-child::after { display:none; }
+  ol.steps h3 { margin:2px 0 2px; font-size:1.05rem; }
+  ol.steps p { margin:0; color:var(--muted); max-width:56ch; }
+
+  .files { background:var(--surface); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  .file { display:flex; align-items:center; gap:12px; padding:14px 16px; }
+  .file + .file { border-top:1px solid var(--line); }
+  .file div { flex:1; min-width:0; }
+  .file b { display:block; } .file span { color:var(--muted); font-size:.88rem; }
+  .file .btn { min-height:40px; padding:0 14px; font-size:.92rem; }
+  h3.sec { margin:24px 0 10px; font-size:1.05rem; }
+  code { background:color-mix(in srgb, var(--ink) 9%, transparent); padding:1px 6px; border-radius:5px; font-size:.9em; }
+  .note { margin-top:16px; padding:12px 16px; border-radius:12px; background:color-mix(in srgb, var(--mark) 22%, var(--surface));
+    border:1px solid color-mix(in srgb, var(--mark) 60%, var(--line)); font-size:.92rem; }
+  @media (min-width:720px) { header h1 { font-size:1.9rem; } main { padding-top:24px; } }
+  @media (prefers-reduced-motion: no-preference) { .btn, nav button { transition:background .15s, color .15s; } }
 </style>
 </head>
 <body>
+<header>
+  <div class="wrap">
+    <h1>ตรวจหมวกกันน็อก</h1>
+    <p>เปิดกล้องแล้วดูได้ทันทีว่าผู้ขับขี่มอเตอร์ไซค์สวมหมวกหรือไม่</p>
+  </div>
+</header>
+<div class="lane" aria-hidden="true"></div>
+
+<nav aria-label="หมวดหมู่">
+  <div class="wrap" role="tablist">
+    <button role="tab" data-tab="detect" aria-selected="true">ตรวจจับ</button>
+    <button role="tab" data-tab="how" aria-selected="false">วิธีทำงาน</button>
+    <button role="tab" data-tab="download" aria-selected="false">ดาวน์โหลด</button>
+    <button role="tab" data-tab="faq" aria-selected="false">ถามตอบ</button>
+  </div>
+</nav>
+
 <main>
-  <h1>🪖 ระบบตรวจจับหมวกกันน็อก</h1>
-  <p class="sub">ตรวจจับรถมอเตอร์ไซค์ก่อน แล้วค่อยตรวจหมวกของคนขับ ประมวลผลในเบราว์เซอร์ทั้งหมด ภาพจากกล้องไม่ถูกส่งไปที่เซิร์ฟเวอร์</p>
-
-  <div class="stage">
-    <video id="video" playsinline muted></video>
-    <canvas id="overlay"></canvas>
-  </div>
-
-  <div class="row">
-    <button id="startBtn">เปิดกล้อง</button>
-    <button id="stopBtn" class="secondary" disabled>หยุด</button>
-    <select id="cameraSel" class="secondary" style="padding:10px;border-radius:8px;background:#1e293b;color:#e2e8f0;border:1px solid #334155"></select>
-  </div>
-
-  <div class="card stats">
-    <div class="stat"><b class="ok" id="nHelmet">0</b>สวมหมวก</div>
-    <div class="stat"><b class="bad" id="nNo">0</b>ไม่สวมหมวก</div>
-    <div class="stat"><b id="fps">0</b>FPS</div>
-  </div>
-
-  <div class="card">
-    <label>ความมั่นใจขั้นต่ำ: <span id="confVal">0.50</span>
-      <input id="conf" type="range" min="0.1" max="0.9" step="0.05" value="0.5">
-    </label><br>
-    <label><input id="beep" type="checkbox" checked> เสียงเตือนเมื่อพบไม่สวมหมวก</label>
-    <div class="row">
-      <label class="btn secondary" style="margin:0">เลือกไฟล์โมเดล (.onnx)
-        <input id="modelFile" type="file" accept=".onnx" hidden>
-      </label>
-      <a class="btn secondary" href="helmet-detector-local.zip" download>⬇ ดาวน์โหลดโปรแกรมสำหรับรันในเครื่อง</a>
-      <a class="btn secondary" href="best.pt" download>⬇ ดาวน์โหลดโมเดล (best.pt)</a>
+  <!-- ===== ตรวจจับ ===== -->
+  <section class="panel" id="p-detect">
+    <div class="chips" aria-label="สถานะโมเดล">
+      <span class="chip" id="chipVeh" data-state="loading"><em>โมเดลจับรถ</em></span>
+      <span class="chip" id="chipHel" data-state="loading"><em>โมเดลหมวก</em></span>
     </div>
-    <div id="status">กำลังโหลดโมเดล...</div>
-  </div>
+
+    <div class="stage">
+      <video id="video" playsinline muted></video>
+      <canvas id="overlay"></canvas>
+      <div class="idle" id="idle">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 10l4.55-2.27A1 1 0 0121 8.62v6.76a1 1 0 01-1.45.9L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+        <b>กล้องยังไม่เปิด</b>
+        <span>ภาพจากกล้องถูกประมวลผลในเครื่องของคุณ ไม่ถูกส่งไปที่ไหน</span>
+      </div>
+    </div>
+
+    <div class="line" id="line" data-kind="idle" role="status" aria-live="polite"><span id="lineText">กดเปิดกล้องเพื่อเริ่มตรวจจับ</span></div>
+
+    <div class="stats">
+      <div class="ok"><b id="nHelmet">0</b><span>สวมหมวก</span></div>
+      <div class="bad"><b id="nNo">0</b><span>ไม่สวมหมวก</span></div>
+      <div><b id="fps">0</b><span>เฟรมต่อวินาที</span></div>
+    </div>
+
+    <div class="actions">
+      <button class="btn grow" id="startBtn">เปิดกล้อง</button>
+      <button class="btn ghost grow" id="stopBtn" disabled>หยุด</button>
+      <select class="cam" id="cameraSel" aria-label="เลือกกล้อง" hidden></select>
+    </div>
+
+    <div class="legend" aria-label="ความหมายของสีกรอบ">
+      <span><i style="background:#3b82f6"></i>มอเตอร์ไซค์</span>
+      <span><i style="background:#22c55e"></i>สวมหมวก</span>
+      <span><i style="background:#ef4444"></i>ไม่สวมหมวก</span>
+      <span><i style="background:#94a3b8"></i>ดูไม่ชัด</span>
+    </div>
+
+    <details>
+      <summary>ตั้งค่า</summary>
+      <div class="set">
+        <label>ความมั่นใจขั้นต่ำ: <b id="confVal">0.50</b>
+          <input id="conf" type="range" min="0.1" max="0.9" step="0.05" value="0.5">
+          <span style="color:var(--muted);font-size:.85rem">ค่าสูง ตรวจเข้มงวดขึ้นแต่อาจพลาดบางคน ค่าต่ำจับได้มากขึ้นแต่อาจเตือนผิด</span>
+        </label>
+        <label class="inline"><input id="beep" type="checkbox" checked> เสียงเตือนเมื่อพบผู้ไม่สวมหมวก</label>
+        <label class="btn ghost" style="cursor:pointer">เลือกไฟล์โมเดลหมวกเอง (.onnx)
+          <input id="modelFile" type="file" accept=".onnx" hidden>
+        </label>
+      </div>
+      <p class="msg" id="msg"></p>
+    </details>
+  </section>
+
+  <!-- ===== วิธีทำงาน ===== -->
+  <section class="panel" id="p-how" hidden>
+    <h2>วิธีทำงาน</h2>
+    <p class="lead">ระบบตรวจเป็นสองขั้น เพื่อให้นับเฉพาะคนที่ขับขี่จริง ไม่นับคนเดินถนน</p>
+    <ol class="steps">
+      <li><h3>หามอเตอร์ไซค์และคน</h3><p>โมเดลสำเร็จรูปมองหารถมอเตอร์ไซค์และคนในภาพ</p></li>
+      <li><h3>จับคู่ผู้ขับขี่</h3><p>คนที่ตัวซ้อนทับกับมอเตอร์ไซค์ ถือว่าเป็นผู้ขับขี่หรือผู้ซ้อน</p></li>
+      <li><h3>ตัดภาพแล้วตรวจหมวก</h3><p>ตัดเฉพาะภาพผู้ขับขี่แต่ละคน แล้วให้โมเดลหมวกที่เทรนเองตัดสินว่าสวมหรือไม่</p></li>
+    </ol>
+    <div class="note">ทุกขั้นทำงานในเบราว์เซอร์ของคุณ ภาพจากกล้องไม่ถูกอัปโหลดและไม่ถูกบันทึก</div>
+  </section>
+
+  <!-- ===== ดาวน์โหลด ===== -->
+  <section class="panel" id="p-download" hidden>
+    <h2>ดาวน์โหลด</h2>
+    <p class="lead">ต้องการรันในเครื่องของคุณเองหรือใช้กับกล้องวงจรปิด ดาวน์โหลดสองไฟล์นี้</p>
+    <div class="files">
+      <div class="file"><div><b>โปรแกรม</b><span>สคริปต์ Python พร้อมคู่มือ</span></div>
+        <a class="btn" href="helmet-detector-local.zip" download>ดาวน์โหลด</a></div>
+      <div class="file"><div><b>โมเดลหมวก (best.pt)</b><span>ขนาดประมาณ 6 MB</span></div>
+        <a class="btn" href="best.pt" download>ดาวน์โหลด</a></div>
+    </div>
+
+    <h3 class="sec">วิธีติดตั้ง</h3>
+    <ol class="steps">
+      <li><h3>ติดตั้ง Python</h3><p>เวอร์ชัน 3.9 ขึ้นไป จาก python.org</p></li>
+      <li><h3>แตกไฟล์และใส่โมเดล</h3><p>แตกไฟล์ zip แล้วนำ <code>best.pt</code> ไปวางในโฟลเดอร์เดียวกัน</p></li>
+      <li><h3>ติดตั้งไลบรารี</h3><p>เปิดเทอร์มินัลในโฟลเดอร์นั้น แล้วพิมพ์ <code>pip install -r requirements.txt</code></p></li>
+      <li><h3>เริ่มใช้งาน</h3><p>พิมพ์ <code>python helmet_detect.py --source 0</code> กด <code>q</code> เพื่อออก</p></li>
+    </ol>
+    <div class="note">ครั้งแรกโปรแกรมจะดาวน์โหลดโมเดลจับรถอัตโนมัติ ต้องต่ออินเทอร์เน็ต</div>
+  </section>
+
+  <!-- ===== คำถามที่พบบ่อย ===== -->
+  <section class="panel" id="p-faq" hidden>
+    <h2>คำถามที่พบบ่อย</h2>
+    <details open><summary>ภาพจากกล้องถูกส่งไปเก็บที่เซิร์ฟเวอร์ไหม</summary>
+      <div class="body"><p>ไม่ การตรวจจับทำงานในเบราว์เซอร์ของคุณทั้งหมด หน้าเว็บนี้ไม่ได้อัปโหลดหรือบันทึกภาพ</p></div></details>
+    <details><summary>แม่นยำแค่ไหน</summary>
+      <div class="body"><p>โมเดลหมวกได้ค่า mAP50 ประมาณ 0.84 บนภาพตรวจสอบ 1,955 ภาพ ซึ่งแปลว่าตรวจถูกเป็นส่วนใหญ่ แต่ยังพลาดได้</p>
+      <p>ที่มืด ฝนตก ระยะไกล หรือกล้องที่เห็นหัวไม่ชัด จะแม่นน้อยลง ควรใช้เป็นเครื่องช่วย ไม่ใช่ตัดสินแทนคน</p></div></details>
+    <details><summary>เปิดกล้องไม่ได้ ต้องทำอย่างไร</summary>
+      <div class="body"><p>เบราว์เซอร์จะอนุญาตกล้องเฉพาะเว็บที่เปิดผ่าน https ตรวจว่าลิงก์ขึ้นต้นด้วย https และกด "อนุญาต" เมื่อมีหน้าต่างขอใช้กล้อง</p>
+      <p>ถ้าเคยกดไม่อนุญาตไว้ ให้ไปที่การตั้งค่าเว็บไซต์ในเบราว์เซอร์ แล้วเปิดสิทธิ์กล้องอีกครั้ง</p></div></details>
+    <details><summary>ทำไมภาพกระตุกหรือค้าง</summary>
+      <div class="body"><p>ระบบรันโมเดลสองตัวต่อเฟรม เครื่องที่ช้าอาจได้เพียงไม่กี่เฟรมต่อวินาที ลองปิดแอปอื่น หรือใช้โปรแกรมเวอร์ชันรันในเครื่อง (แท็บดาวน์โหลด) ซึ่งเร็วกว่า</p></div></details>
+    <details><summary>ทำไมต้องหามอเตอร์ไซค์ก่อน</summary>
+      <div class="body"><p>เพื่อไม่ให้นับคนเดินถนนหรือคนยืนริมทางเป็นผู้ไม่สวมหมวก และทำให้หมวกในภาพที่ตัดมาใหญ่ขึ้น ตรวจได้แม่นกว่า</p></div></details>
+  </section>
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.3/dist/ort.min.js"></script>
@@ -73,7 +272,7 @@ const CLASS_NAMES = ["helmet detect", "helmet not detect"];  // ลำดับ�
 const NO_HELMET = "helmet not detect";                        // ชื่อคลาส "ไม่สวมหมวก"
 const INPUT = 640, IOU_THRESH = 0.45;
 
-ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.3/dist/";
+if (window.ort) ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.3/dist/";
 
 const $ = id => document.getElementById(id);
 const video = $("video"), canvas = $("overlay"), ctx = canvas.getContext("2d");
@@ -82,28 +281,32 @@ const wctx = work.getContext("2d", { willReadFrequently: true });
 
 let vehSession = null, session = null, stream = null, running = false, lastBeep = 0;
 
-function setStatus(t) { $("status").textContent = t; }
+function setStatus(t) { $("msg").textContent = t; }
+function chip(id, state) { $(id).dataset.state = state; }
+function setLine(kind, text) { const l = $("line"); l.dataset.kind = kind; $("lineText").textContent = text; }
 
 async function loadModel(source) {
+  chip("chipHel", "loading");
   try {
-    setStatus("กำลังโหลดโมเดล...");
     session = await ort.InferenceSession.create(source, { executionProviders: ["wasm"] });
-    setStatus("โมเดลพร้อมใช้งาน ✔");
+    chip("chipHel", "ready");
   } catch (e) {
-    session = null;
-    setStatus("ยังไม่พบโมเดล: วางไฟล์ไว้ที่ " + MODEL_URL + " หรือเลือกไฟล์ .onnx ด้วยตนเอง");
+    session = null; chip("chipHel", "error");
+    setStatus("โหลดโมเดลหมวกไม่สำเร็จ: ตรวจสอบว่ามีไฟล์ " + MODEL_URL + " อยู่ข้าง index.html หรือเลือกไฟล์ .onnx ในหน้าตั้งค่า");
   }
 }
 
 async function loadVeh() {
-  try { vehSession = await ort.InferenceSession.create(VEH_URL, { executionProviders: ["wasm"] }); }
-  catch (e) { vehSession = null; setStatus("ยังไม่พบโมเดลจับรถ: วาง yolov8n.onnx ไว้ที่ " + VEH_URL); }
+  chip("chipVeh", "loading");
+  try { vehSession = await ort.InferenceSession.create(VEH_URL, { executionProviders: ["wasm"] }); chip("chipVeh", "ready"); }
+  catch (e) { vehSession = null; chip("chipVeh", "error"); setStatus("โหลดโมเดลจับรถไม่สำเร็จ: ตรวจสอบว่ามีไฟล์ " + VEH_URL + " อยู่ข้าง index.html"); }
 }
 
 async function listCameras() {
   try {
     const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "videoinput");
     $("cameraSel").innerHTML = devs.map((d, i) => `<option value="${d.deviceId}">${d.label || "กล้อง " + (i + 1)}</option>`).join("");
+    $("cameraSel").hidden = devs.length < 2;
   } catch {}
 }
 
@@ -118,10 +321,13 @@ async function start() {
     canvas.width = video.videoWidth; canvas.height = video.videoHeight;
     await listCameras();
     running = true;
+    $("idle").hidden = true;
     $("startBtn").disabled = true; $("stopBtn").disabled = false;
+    setLine("run", "กำลังตรวจจับ ยังไม่พบมอเตอร์ไซค์ในภาพ");
     loop();
   } catch (e) {
-    setStatus("เปิดกล้องไม่ได้: " + e.message + " (ต้องใช้ผ่าน https หรือ localhost และอนุญาตกล้อง)");
+    setStatus("เปิดกล้องไม่ได้: " + e.message + " ต้องเปิดผ่าน https และอนุญาตการใช้กล้องในเบราว์เซอร์");
+    setLine("idle", "เปิดกล้องไม่สำเร็จ ดูรายละเอียดในหน้าตั้งค่า");
   }
 }
 
@@ -129,7 +335,10 @@ function stop() {
   running = false;
   if (stream) stream.getTracks().forEach(t => t.stop());
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  $("idle").hidden = false;
+  $("nHelmet").textContent = 0; $("nNo").textContent = 0; $("fps").textContent = 0;
   $("startBtn").disabled = false; $("stopBtn").disabled = true;
+  setLine("idle", "กดเปิดกล้องเพื่อเริ่มตรวจจับ");
 }
 
 function prep(src, sx, sy, sw, sh) {
@@ -232,6 +441,9 @@ function draw({ bikes, riders }) {
     else box(r.box, "#94a3b8", "ไม่ชัดเจน");
   }
   $("nHelmet").textContent = ok; $("nNo").textContent = bad;
+  if (bad) setLine("bad", "พบผู้ขับขี่ไม่สวมหมวก " + bad + " คน");
+  else if (ok) setLine("ok", "ผู้ขับขี่ทุกคนสวมหมวก (" + ok + " คน)");
+  else setLine("run", riders.length ? "พบผู้ขับขี่ แต่ยังดูหมวกไม่ชัด" : "กำลังตรวจจับ ยังไม่พบมอเตอร์ไซค์ในภาพ");
   if (bad && $("beep").checked && Date.now() - lastBeep > 3000) { lastBeep = Date.now(); beep(); }
 }
 
@@ -267,6 +479,18 @@ $("modelFile").onchange = async e => {
 loadVeh();
 loadModel(MODEL_URL);
 listCameras();
+
+// ===== แท็บ =====
+const tabBtns = [...document.querySelectorAll("[data-tab]")];
+function showTab(name, push) {
+  if (!document.getElementById("p-" + name)) name = "detect";
+  if (name !== "detect" && running) stop();
+  tabBtns.forEach(t => t.setAttribute("aria-selected", String(t.dataset.tab === name)));
+  document.querySelectorAll(".panel").forEach(p => p.hidden = p.id !== "p-" + name);
+  if (push) { try { history.replaceState(null, "", "#" + name); } catch {} window.scrollTo(0, 0); }
+}
+tabBtns.forEach(t => t.onclick = () => showTab(t.dataset.tab, true));
+showTab(location.hash.slice(1) || "detect", false);
 </script>
 </body>
 </html>
