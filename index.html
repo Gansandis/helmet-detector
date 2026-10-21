@@ -136,6 +136,24 @@
   code { background:color-mix(in srgb, var(--ink) 9%, transparent); padding:1px 6px; border-radius:5px; font-size:.9em; }
   .note { margin-top:16px; padding:12px 16px; border-radius:12px; background:color-mix(in srgb, var(--mark) 22%, var(--surface));
     border:1px solid color-mix(in srgb, var(--mark) 60%, var(--line)); font-size:.92rem; }
+  /* ----- ภาพที่บันทึก ----- */
+  .linkbtn { background:none; border:0; padding:10px 2px; color:var(--sign); font-weight:600; cursor:pointer; text-align:left; }
+  .tools { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:0 0 12px; }
+  .tools .count { flex:1 1 100%; color:var(--muted); }
+  .btn.sm { min-height:40px; padding:0 14px; font-size:.92rem; }
+  .btn.danger { border-color:var(--bad); color:var(--bad); background:transparent; }
+  .shots { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:12px; }
+  .shots figure { margin:0; background:var(--surface); border:1px solid var(--line); border-radius:12px; overflow:hidden; display:flex; flex-direction:column; }
+  .shots img { width:100%; aspect-ratio:4/3; object-fit:cover; background:#000; display:block; }
+  .shots figcaption { padding:8px 10px 0; font-size:.82rem; color:var(--muted); }
+  .tag { display:inline-block; border-radius:999px; padding:0 8px; margin-right:6px; font-weight:600; border:1px solid currentColor; }
+  .tag.no { color:var(--bad); } .tag.unsure { color:var(--warn); }
+  .shots .row { display:flex; gap:6px; padding:8px 10px 10px; margin-top:auto; }
+  .shots .row .btn { flex:1; min-height:36px; padding:0 8px; font-size:.85rem; }
+  .empty { text-align:center; color:var(--muted); padding:40px 16px; background:var(--surface); border:1px dashed var(--line); border-radius:12px; }
+  .toast { position:fixed; left:50%; bottom:calc(env(safe-area-inset-bottom,0px) + 20px); transform:translateX(-50%);
+    background:var(--road); color:var(--on-road); padding:10px 18px; border-radius:999px; font-size:.92rem; z-index:20; max-width:90vw; }
+  .toast[hidden] { display:none; }
   @media (min-width:720px) { header h1 { font-size:1.9rem; } main { padding-top:24px; } }
   @media (prefers-reduced-motion: no-preference) { .btn, nav button { transition:background .15s, color .15s; } }
 </style>
@@ -152,6 +170,7 @@
 <nav aria-label="หมวดหมู่">
   <div class="wrap" role="tablist">
     <button role="tab" data-tab="detect" aria-selected="true">ตรวจจับ</button>
+    <button role="tab" data-tab="shots" aria-selected="false">ภาพที่บันทึก<span id="tabCount"></span></button>
     <button role="tab" data-tab="how" aria-selected="false">วิธีทำงาน</button>
     <button role="tab" data-tab="download" aria-selected="false">ดาวน์โหลด</button>
     <button role="tab" data-tab="faq" aria-selected="false">ถามตอบ</button>
@@ -190,6 +209,8 @@
       <select class="cam" id="cameraSel" aria-label="เลือกกล้อง" hidden></select>
     </div>
 
+    <button class="linkbtn" id="goShots">ภาพที่บันทึกไว้: <span id="shotCount">0</span> ภาพ · ดูและดาวน์โหลด</button>
+
     <div class="legend" aria-label="ความหมายของสีกรอบ">
       <span><i style="background:#3b82f6"></i>มอเตอร์ไซค์</span>
       <span><i style="background:#22c55e"></i>สวมหมวก</span>
@@ -211,6 +232,8 @@
             <option value="700">ประหยัด (เหมาะกับมือถือเก่า)</option>
           </select>
         </label>
+        <label class="inline"><input id="saveNo" type="checkbox" checked> บันทึกภาพอัตโนมัติเมื่อพบผู้ไม่สวมหมวก</label>
+        <label class="inline"><input id="saveUnsure" type="checkbox" checked> บันทึกภาพอัตโนมัติเมื่อระบบไม่มั่นใจ</label>
         <label class="inline"><input id="beep" type="checkbox" checked> เสียงเตือนเมื่อพบผู้ไม่สวมหมวก</label>
         <label class="btn ghost" style="cursor:pointer">เลือกไฟล์โมเดลหมวกเอง (.onnx)
           <input id="modelFile" type="file" accept=".onnx" hidden>
@@ -218,6 +241,20 @@
       </div>
       <p class="msg" id="msg"></p>
     </details>
+  </section>
+
+  <!-- ===== ภาพที่บันทึก ===== -->
+  <section class="panel" id="p-shots" hidden>
+    <h2>ภาพที่บันทึก</h2>
+    <p class="lead">ระบบบันทึกภาพให้เองเมื่อพบผู้ไม่สวมหมวก หรือเมื่อไม่มั่นใจ ภาพเก็บไว้ในเบราว์เซอร์ของเครื่องนี้เท่านั้น</p>
+    <div class="tools" id="shotTools" hidden>
+      <span class="count">ทั้งหมด <b id="shotTotal">0</b> ภาพ (เก็บล่าสุดไม่เกิน 60 ภาพ)</span>
+      <button class="btn sm" id="dlAll">ดาวน์โหลดทั้งหมด</button>
+      <button class="btn sm danger" id="clearAll">ลบทั้งหมด</button>
+    </div>
+    <div class="empty" id="shotEmpty">ยังไม่มีภาพ เปิดกล้องที่แท็บตรวจจับ ภาพจะขึ้นที่นี่อัตโนมัติ</div>
+    <div class="shots" id="shotGrid"></div>
+    <div class="note">ภาพที่มีใบหน้าหรือป้ายทะเบียนเป็นข้อมูลส่วนบุคคล ควรใช้ตามวัตถุประสงค์ที่แจ้งไว้และลบเมื่อไม่ใช้แล้ว</div>
   </section>
 
   <!-- ===== วิธีทำงาน ===== -->
@@ -229,7 +266,7 @@
       <li><h3>จับคู่ผู้ขับขี่</h3><p>คนที่ตัวซ้อนทับกับมอเตอร์ไซค์ ถือว่าเป็นผู้ขับขี่หรือผู้ซ้อน</p></li>
       <li><h3>ตัดภาพแล้วตรวจหมวก</h3><p>ตัดเฉพาะภาพผู้ขับขี่แต่ละคน แล้วให้โมเดลหมวกที่เทรนเองตัดสินว่าสวมหรือไม่</p></li>
     </ol>
-    <div class="note">ทุกขั้นทำงานในเบราว์เซอร์ของคุณ ภาพจากกล้องไม่ถูกอัปโหลดและไม่ถูกบันทึก</div>
+    <div class="note">ทุกขั้นทำงานในเบราว์เซอร์ของคุณ ภาพจากกล้องไม่ถูกอัปโหลด เฉพาะภาพที่ระบบบันทึกตอนพบผู้ไม่สวมหมวกหรือไม่มั่นใจ จะเก็บไว้ในเครื่องของคุณ</div>
   </section>
 
   <!-- ===== ดาวน์โหลด ===== -->
@@ -257,7 +294,7 @@
   <section class="panel" id="p-faq" hidden>
     <h2>คำถามที่พบบ่อย</h2>
     <details open><summary>ภาพจากกล้องถูกส่งไปเก็บที่เซิร์ฟเวอร์ไหม</summary>
-      <div class="body"><p>ไม่ การตรวจจับทำงานในเบราว์เซอร์ของคุณทั้งหมด หน้าเว็บนี้ไม่ได้อัปโหลดหรือบันทึกภาพ</p></div></details>
+      <div class="body"><p>ไม่ การตรวจจับทำงานในเบราว์เซอร์ของคุณทั้งหมด ไม่มีการอัปโหลดภาพ</p><p>ภาพที่ระบบบันทึกอัตโนมัติ (ตอนพบผู้ไม่สวมหมวกหรือไม่มั่นใจ) เก็บอยู่ในเบราว์เซอร์ของเครื่องนี้เท่านั้น ลบได้ที่แท็บ "ภาพที่บันทึก"</p></div></details>
     <details><summary>แม่นยำแค่ไหน</summary>
       <div class="body"><p>โมเดลหมวกได้ค่า mAP50 ประมาณ 0.84 บนภาพตรวจสอบ 1,955 ภาพ ซึ่งแปลว่าตรวจถูกเป็นส่วนใหญ่ แต่ยังพลาดได้</p>
       <p>ที่มืด ฝนตก ระยะไกล หรือกล้องที่เห็นหัวไม่ชัด จะแม่นน้อยลง ควรใช้เป็นเครื่องช่วย ไม่ใช่ตัดสินแทนคน</p></div></details>
@@ -270,6 +307,8 @@
       <div class="body"><p>เพื่อไม่ให้นับคนเดินถนนหรือคนยืนริมทางเป็นผู้ไม่สวมหมวก และทำให้หมวกในภาพที่ตัดมาใหญ่ขึ้น ตรวจได้แม่นกว่า</p></div></details>
   </section>
 </main>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.3/dist/ort.min.js"></script>
 <script>
@@ -323,24 +362,41 @@ async function loadVeh() {
   catch (e) { vehSession = null; chip("chipVeh", "error"); setStatus("โหลดโมเดลจับรถไม่สำเร็จ: ตรวจสอบว่ามีไฟล์ " + VEH_URL + " อยู่ข้าง index.html"); }
 }
 
-async function listCameras() {
+async function listCameras(activeId) {
   try {
-    const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "videoinput");
-    $("cameraSel").innerHTML = devs.map((d, i) => `<option value="${d.deviceId}">${d.label || "กล้อง " + (i + 1)}</option>`).join("");
-    $("cameraSel").hidden = devs.length < 2;
+    const sel = $("cameraSel");
+    const keep = activeId || sel.value;
+    const devs = (await navigator.mediaDevices.enumerateDevices())
+      .filter(d => d.kind === "videoinput" && d.deviceId);   // ก่อนอนุญาตกล้อง id จะว่าง
+    sel.innerHTML = "";
+    devs.forEach((d, i) => {
+      const o = document.createElement("option");
+      o.value = d.deviceId; o.textContent = d.label || "กล้อง " + (i + 1);
+      sel.appendChild(o);
+    });
+    if (devs.some(d => d.deviceId === keep)) sel.value = keep;   // คงกล้องที่ใช้อยู่ไว้
+    sel.hidden = devs.length < 2;
   } catch {}
+}
+
+async function openStream() {
+  const id = $("cameraSel").value;
+  const size = { width: { ideal: 1280 }, height: { ideal: 720 } };
+  if (id) {
+    try { return await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: id }, ...size } }); }
+    catch (e) { /* id เก่า/ใช้ไม่ได้ ลองกล้องเริ่มต้นต่อ */ }
+  }
+  // ไม่ได้เลือกกล้อง: ใช้กล้องหลังก่อน (เหมาะกับถ่ายถนน) ถ้าไม่มีจะใช้กล้องที่มี
+  return navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, ...size } });
 }
 
 async function start() {
   try {
-    const id = $("cameraSel").value;
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: id ? { deviceId: { exact: id }, width: 1280, height: 720 } : { width: 1280, height: 720 }
-    });
+    stream = await openStream();
     video.srcObject = stream;
     await video.play();
     canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-    await listCameras();
+    await listCameras(stream.getVideoTracks()[0].getSettings().deviceId);
     running = true;
     $("idle").hidden = true;
     $("startBtn").disabled = true; $("stopBtn").disabled = false;
@@ -437,10 +493,10 @@ async function analyze(conf) {
     const pw = (r.box.x2 - r.box.x1) * 0.1, ph = (r.box.y2 - r.box.y1) * 0.1;
     const x1 = Math.max(0, r.box.x1 - pw), y1 = Math.max(0, r.box.y1 - ph);
     const x2 = Math.min(W, r.box.x2 + pw), y2 = Math.min(H, r.box.y2 + ph);
-    r.status = "unknown";
+    r.status = "unknown"; r.score = 0;
     if (x2 - x1 < 24 || y2 - y1 < 24) continue;
     const hd = await detect(session, video, x1, y1, x2 - x1, y2 - y1, conf);
-    if (hd.length) r.status = CLASS_NAMES[hd[0].cls] === NO_HELMET ? "no" : "yes";
+    if (hd.length) { r.status = CLASS_NAMES[hd[0].cls] === NO_HELMET ? "no" : "yes"; r.score = hd[0].score; }
   }
   return { bikes, riders };
 }
@@ -465,6 +521,11 @@ function draw({ bikes, riders }) {
   if (bad) setLine("bad", "พบผู้ขับขี่ไม่สวมหมวก " + bad + " คน");
   else if (ok) setLine("ok", "ผู้ขับขี่ทุกคนสวมหมวก (" + ok + " คน)");
   else setLine("run", riders.length ? "พบผู้ขับขี่ แต่ยังดูหมวกไม่ชัด" : "กำลังตรวจจับ ยังไม่พบมอเตอร์ไซค์ในภาพ");
+  const strong = riders.filter(r => r.status === "no" && r.score >= UNSURE_BELOW).length;
+  const unsure = riders.filter(r => r.score < UNSURE_BELOW || r.status === "unknown").length;
+  const now = Date.now();
+  if (strong && $("saveNo").checked && now - lastSnap.no > 3000) { lastSnap.no = now; snap("no", strong); }
+  else if (unsure && $("saveUnsure").checked && now - lastSnap.unsure > 5000) { lastSnap.unsure = now; snap("unsure", unsure); }
   if (bad && $("beep").checked && Date.now() - lastBeep > 3000) { lastBeep = Date.now(); beep(); }
 }
 
@@ -503,6 +564,7 @@ async function loop() {
 }
 
 $("startBtn").onclick = start;
+$("cameraSel").onchange = async () => { if (running) { stop(); await start(); } };
 $("stopBtn").onclick = stop;
 $("conf").oninput = e => $("confVal").textContent = parseFloat(e.target.value).toFixed(2);
 $("modelFile").onchange = async e => {
@@ -512,6 +574,110 @@ $("modelFile").onchange = async e => {
 loadVeh();
 loadModel(MODEL_URL);
 listCameras();
+
+// ===== บันทึกภาพ =====
+const MAX_SHOTS = 60, UNSURE_BELOW = 0.6;
+let shots = [], lastSnap = { no: 0, unsure: 0 }, idb = null, toastT = 0;
+const KIND_TH = { no: "ไม่สวมหมวก", unsure: "ไม่มั่นใจ" };
+
+function dbOpen() {
+  return new Promise(res => {
+    try {
+      const r = indexedDB.open("helmet-shots", 1);
+      r.onupgradeneeded = () => r.result.createObjectStore("shots", { keyPath: "id", autoIncrement: true });
+      r.onsuccess = () => res(r.result); r.onerror = () => res(null);
+    } catch { res(null); }
+  });
+}
+function dbDo(mode, fn) {
+  return new Promise(res => {
+    if (!idb) return res(null);
+    try {
+      const t = idb.transaction("shots", mode), rq = fn(t.objectStore("shots"));
+      t.oncomplete = () => res(rq ? rq.result : true); t.onerror = t.onabort = () => res(null);
+    } catch { res(null); }
+  });
+}
+function toast(msg) {
+  const t = $("toast"); t.textContent = msg; t.hidden = false;
+  clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 2200);
+}
+const pad = n => String(n).padStart(2, "0");
+function stamp(t) { const d = new Date(t); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; }
+
+function snap(kind, n) {
+  try {
+    const W = canvas.width, H = canvas.height; if (!W || !H) return;
+    const c = document.createElement("canvas"); c.width = W; c.height = H;
+    const x = c.getContext("2d");
+    x.drawImage(video, 0, 0, W, H); x.drawImage(canvas, 0, 0);          // ภาพกล้อง + กรอบที่วาดไว้
+    const fs = Math.max(14, W / 50);
+    x.fillStyle = "rgba(0,0,0,.6)"; x.fillRect(0, H - fs * 1.9, W, fs * 1.9);
+    x.fillStyle = "#fff"; x.font = `${fs}px sans-serif`;
+    x.fillText(stamp(Date.now()) + "  " + KIND_TH[kind] + " " + n + " คน", 10, H - fs * 0.55);
+    c.toBlob(b => { if (b) addShot(kind, n, b); }, "image/jpeg", 0.85);
+  } catch (e) { console.error(e); }
+}
+
+async function addShot(kind, n, blob) {
+  const rec = { t: Date.now(), kind, n, blob };
+  const id = await dbDo("readwrite", st => st.add(rec));
+  rec.id = id != null ? id : "m" + rec.t;
+  rec.url = URL.createObjectURL(blob);
+  shots.unshift(rec);
+  while (shots.length > MAX_SHOTS) await removeShot(shots[shots.length - 1], false);
+  renderShots();
+  toast("บันทึกภาพแล้ว (" + KIND_TH[kind] + ")");
+}
+
+async function removeShot(s, render = true) {
+  await dbDo("readwrite", st => st.delete(s.id));
+  URL.revokeObjectURL(s.url);
+  shots = shots.filter(x => x !== s);
+  if (render) renderShots();
+}
+
+function download(s) {
+  const a = document.createElement("a");
+  a.href = s.url; a.download = `helmet_${s.kind}_${stamp(s.t).replace(/[: ]/g, "-")}.jpg`;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+function renderShots() {
+  $("shotCount").textContent = shots.length;
+  $("shotTotal").textContent = shots.length;
+  $("tabCount").textContent = shots.length ? " (" + shots.length + ")" : "";
+  $("shotEmpty").hidden = shots.length > 0;
+  $("shotTools").hidden = shots.length === 0;
+  const g = $("shotGrid"); g.textContent = "";
+  for (const s of shots) {
+    const f = document.createElement("figure");
+    const img = document.createElement("img"); img.src = s.url; img.alt = "ภาพ" + KIND_TH[s.kind]; img.loading = "lazy";
+    const cap = document.createElement("figcaption");
+    const tag = document.createElement("span"); tag.className = "tag " + s.kind; tag.textContent = KIND_TH[s.kind];
+    cap.append(tag, stamp(s.t).slice(5));
+    const row = document.createElement("div"); row.className = "row";
+    const d = document.createElement("button"); d.className = "btn"; d.textContent = "ดาวน์โหลด"; d.onclick = () => download(s);
+    const x = document.createElement("button"); x.className = "btn danger"; x.textContent = "ลบ"; x.onclick = () => removeShot(s);
+    row.append(d, x); f.append(img, cap, row); g.appendChild(f);
+  }
+}
+
+$("goShots").onclick = () => showTab("shots", true);
+$("dlAll").onclick = () => shots.slice().forEach((s, i) => setTimeout(() => download(s), i * 400));
+$("clearAll").onclick = async () => {
+  if (!confirm("ลบภาพที่บันทึกทั้งหมดในเครื่องนี้?")) return;
+  await dbDo("readwrite", st => st.clear());
+  shots.forEach(s => URL.revokeObjectURL(s.url)); shots = []; renderShots();
+};
+(async () => {
+  idb = await dbOpen();
+  const rows = await dbDo("readonly", st => st.getAll());
+  if (rows && rows.length) {
+    shots = rows.sort((a, b) => b.t - a.t).map(r => ({ ...r, url: URL.createObjectURL(r.blob) }));
+  }
+  renderShots();
+})();
 
 // ===== แท็บ =====
 const tabBtns = [...document.querySelectorAll("[data-tab]")];
