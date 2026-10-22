@@ -55,6 +55,7 @@
   .chips { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
   .chip { display:inline-flex; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--line);
     border-radius:999px; padding:4px 12px; font-size:.85rem; color:var(--muted); }
+  .chip[hidden] { display:none; }
   .chip::before { content:""; width:9px; height:9px; border-radius:50%; background:var(--warn); }
   .chip[data-state="ready"]::before { background:var(--ok); }
   .chip[data-state="error"]::before { background:var(--bad); }
@@ -201,6 +202,7 @@
     <div class="chips" aria-label="สถานะโมเดล">
       <span class="chip" id="chipVeh" data-state="loading"><em>โมเดลจับรถ</em></span>
       <span class="chip" id="chipHel" data-state="loading"><em>โมเดลหมวก</em></span>
+      <span class="chip" id="chipGpu" data-state="ready" hidden><em>โหมด GPU (ทดลอง)</em></span>
     </div>
 
     <div class="placeholder" id="idle">
@@ -246,6 +248,8 @@
             <option value="700">ประหยัด (เหมาะกับมือถือเก่า)</option>
           </select>
         </label>
+        <label class="inline" id="gpuRow"><input id="useGpu" type="checkbox"> เร่งความเร็วด้วย GPU (ทดลอง)</label>
+        <span id="gpuNote" style="color:var(--muted);font-size:.85rem;margin-top:-8px">ใช้การ์ดจอของเครื่องช่วยตรวจ อาจเร็วขึ้นหลายเท่า แต่บางเครื่องหรือเบราว์เซอร์ใช้ไม่ได้ ถ้าเกิดข้อผิดพลาดระบบจะปิดโหมดนี้ให้เอง</span>
         <label>บันทึกภาพไม่ถี่เกินกว่า
           <select id="snapGap" class="cam" style="min-height:44px">
             <option value="1000">ทุก 1 วินาที</option>
@@ -372,7 +376,15 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.3/dist/ort.min.js"></script>
+<script>
+// โหมด GPU (ทดลอง): ถ้าผู้ใช้เปิดไว้และเบราว์เซอร์รองรับ WebGPU จะโหลดชุด ort.webgpu แทน
+(function () {
+  var gpu = false;
+  try { gpu = localStorage.getItem("useGpu") === "1" && !!navigator.gpu; } catch (e) {}
+  window.USE_GPU = gpu;
+  document.write('<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.3/dist/' + (gpu ? 'ort.webgpu.min.js' : 'ort.min.js') + '"><\/script>');
+})();
+</script>
 <script>
 // ===== ตั้งค่า =====
 const VEH_URL = "yolov8n.onnx";               // โมเดลจับรถ/คน (COCO) ใช้ของสำเร็จรูป ไม่ต้องเทรน
@@ -385,16 +397,20 @@ const VEH_SIZE = 640, HEL_SIZE = 640;
 
 if (window.ort) {
   ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.3/dist/";
-  ort.env.wasm.proxy = true;   // ให้โมเดลรันใน worker หน้าเว็บจะไม่ค้าง
+  ort.env.wasm.proxy = !window.USE_GPU;   // โหมดปกติ: รันใน worker หน้าเว็บจะไม่ค้าง (โหมด GPU ใช้ worker ไม่ได้)
   ort.env.wasm.numThreads = Math.min(4, navigator.hardwareConcurrency || 1);
 }
 async function makeSession(src) {
-  const opt = { executionProviders: ["wasm"] };
-  try { return await ort.InferenceSession.create(src, opt); }
+  const gpu = !!window.USE_GPU;
+  try { return await ort.InferenceSession.create(src, { executionProviders: gpu ? ["webgpu", "wasm"] : ["wasm"] }); }
   catch (e) {
+    if (gpu) {                                   // GPU ใช้ไม่ได้: ถอยไปโหมดปกติ
+      window.USE_GPU = false; $("chipGpu").hidden = true; ort.env.wasm.proxy = true;
+      return await ort.InferenceSession.create(src, { executionProviders: ["wasm"] });
+    }
     if (!ort.env.wasm.proxy) throw e;
     ort.env.wasm.proxy = false;                  // ลองใหม่แบบไม่ใช้ worker
-    return await ort.InferenceSession.create(src, opt);
+    return await ort.InferenceSession.create(src, { executionProviders: ["wasm"] });
   }
 }
 
@@ -729,8 +745,26 @@ async function loop() {
     stopAll();
     setLine("err", "ตรวจจับไม่สำเร็จ: " + (e && e.message ? e.message : e));
     setStatus("เกิดข้อผิดพลาดระหว่างตรวจจับ: " + (e && e.message ? e.message : e));
+    if (window.USE_GPU) {                         // สงสัยว่าเกิดจากโหมด GPU: ปิดให้ รอบหน้ากลับไปโหมดปกติ
+      try { localStorage.setItem("useGpu", "0"); } catch {}
+      $("useGpu").checked = false;
+      setLine("err", "โหมด GPU ใช้งานไม่ได้บนเครื่องนี้ ปิดให้แล้ว โหลดหน้าใหม่เพื่อกลับไปโหมดปกติ");
+    }
   } finally { loopOn = false; }
 }
+
+// ----- โหมด GPU (ทดลอง) -----
+(function () {
+  const box = $("useGpu"), note = $("gpuNote");
+  if (!navigator.gpu) { box.disabled = true; note.textContent = "เบราว์เซอร์หรือเครื่องนี้ยังไม่รองรับ WebGPU จึงเปิดโหมดนี้ไม่ได้ (Chrome รุ่นใหม่บน Android/คอมพิวเตอร์ส่วนใหญ่รองรับ)"; }
+  box.checked = !!window.USE_GPU;
+  $("chipGpu").hidden = !window.USE_GPU;
+  box.onchange = () => {
+    try { localStorage.setItem("useGpu", box.checked ? "1" : "0"); } catch {}
+    toast(box.checked ? "เปิดโหมด GPU กำลังโหลดหน้าใหม่…" : "ปิดโหมด GPU กำลังโหลดหน้าใหม่…");
+    setTimeout(() => location.reload(), 600);
+  };
+})();
 
 $("addBtn").onclick = addCamera;
 $("stopBtn").onclick = stopAll;
