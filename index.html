@@ -158,6 +158,11 @@
   .shots figure { margin:0; background:var(--surface); border:1px solid var(--line); border-radius:12px; overflow:hidden; display:flex; flex-direction:column; }
   .shots img { width:100%; aspect-ratio:4/3; object-fit:cover; background:#000; display:block; }
   .shots figcaption { padding:8px 10px 0; font-size:.82rem; color:var(--muted); }
+  .view img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; }
+  .view img[hidden], .view video[hidden] { display:none; }
+  .rlist { margin:8px 0 0; padding:0; list-style:none; }
+  .rlist li { display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-top:1px solid var(--line); color:var(--ink); }
+  .rlist b.ok { color:var(--ok); } .rlist b.no { color:var(--bad); } .rlist b.un { color:var(--muted); }
   .tag { display:inline-block; border-radius:999px; padding:0 8px; margin-right:6px; font-weight:600; border:1px solid currentColor; }
   .tag.no { color:var(--bad); } .tag.unsure { color:var(--warn); }
   .shots .row { display:flex; gap:6px; padding:8px 10px 10px; margin-top:auto; }
@@ -182,6 +187,7 @@
 <nav aria-label="หมวดหมู่">
   <div class="wrap" role="tablist">
     <button role="tab" data-tab="detect" aria-selected="true">ตรวจจับ</button>
+    <button role="tab" data-tab="test" aria-selected="false">ทดสอบ</button>
     <button role="tab" data-tab="shots" aria-selected="false">ภาพที่บันทึก<span id="tabCount"></span></button>
     <button role="tab" data-tab="how" aria-selected="false">วิธีทำงาน</button>
     <button role="tab" data-tab="download" aria-selected="false">ดาวน์โหลด</button>
@@ -251,6 +257,39 @@
     </details>
   </section>
 
+  <!-- ===== ทดสอบ ===== -->
+  <section class="panel" id="p-test" hidden>
+    <h2>ทดสอบด้วยภาพหรือวิดีโอ</h2>
+    <p class="lead">เลือกไฟล์จากเครื่อง ระบบจะตรวจด้วยโมเดลชุดเดียวกับที่ใช้กับกล้อง ใช้ดูว่าโมเดลแม่นพอก่อนนำไปใช้จริง</p>
+    <div class="chips"><span class="chip" id="tChipVeh" data-state="loading"><em>โมเดลจับรถ</em></span><span class="chip" id="tChipHel" data-state="loading"><em>โมเดลหมวก</em></span></div>
+    <div class="set" style="padding:0 0 12px">
+      <label>โหมดทดสอบ
+        <select id="tMode" class="cam" style="min-height:44px">
+          <option value="helmet">ทดสอบเฉพาะโมเดลหมวก (ภาพใกล้ ๆ เห็นหัว/ตัวคน)</option>
+          <option value="full">ระบบเต็ม (จับมอเตอร์ไซค์ก่อน แล้วตรวจหมวก)</option>
+        </select>
+      </label>
+    </div>
+    <div class="actions" style="margin-top:0">
+      <label class="btn grow" style="cursor:pointer">เลือกภาพหรือวิดีโอ<input id="testFile" type="file" accept="image/*,video/*" hidden></label>
+    </div>
+    <div class="tile" id="tBox" data-state="run" hidden style="margin-top:12px">
+      <div class="view">
+        <img id="tImg" alt="ภาพที่ใช้ทดสอบ" hidden>
+        <video id="tVid" controls playsinline muted loop hidden></video>
+        <canvas id="tCanvas" style="pointer-events:none"></canvas>
+      </div>
+    </div>
+    <div class="line" id="tLine" data-kind="idle"><span id="tLineText">ยังไม่ได้เลือกไฟล์</span></div>
+    <div class="set" style="padding:12px 0 0">
+      <label>ความมั่นใจขั้นต่ำ: <b id="tConfVal">0.50</b>
+        <input id="tConf" type="range" min="0.1" max="0.9" step="0.05" value="0.5">
+      </label>
+    </div>
+    <div class="body" style="padding:0"><div id="tList"></div></div>
+    <div class="actions"><button class="btn sm ghost" id="tSave" hidden>บันทึกภาพผลลัพธ์</button></div>
+  </section>
+
   <!-- ===== ภาพที่บันทึก ===== -->
   <section class="panel" id="p-shots" hidden>
     <h2>ภาพที่บันทึก</h2>
@@ -313,6 +352,9 @@
       <div class="body"><p>ได้สูงสุด 4 กล้อง กด "เพิ่มกล้อง" แล้วเลือกกล้องแต่ละช่องจากเมนูใต้ภาพ เหมาะกับคอมพิวเตอร์ที่ต่อกล้อง USB หลายตัว</p>
       <p>มือถือส่วนใหญ่เปิดกล้องหน้าและหลังพร้อมกันไม่ได้ ถ้าเปิดตัวที่สองแล้วตัวแรกดับ ถือว่าเครื่องไม่รองรับ</p>
       <p>ยิ่งเปิดหลายกล้อง แต่ละกล้องจะถูกตรวจถี่น้อยลง เพราะใช้เครื่องคำนวณร่วมกัน กล้อง IP/RTSP เปิดในเว็บตรง ๆ ไม่ได้ ให้ใช้โปรแกรมเวอร์ชันรันในเครื่อง</p></div></details>
+    <details><summary>ทดสอบโมเดลกับภาพหรือวิดีโอของตัวเองได้ไหม</summary>
+      <div class="body"><p>ได้ ไปที่แท็บ "ทดสอบ" เลือกภาพหรือวิดีโอจากเครื่อง ระบบจะวาดกรอบพร้อมเปอร์เซ็นต์ความมั่นใจ และปรับค่าความมั่นใจดูผลได้ทันที</p>
+      <p>ควรทดสอบด้วยภาพจากมุมกล้องที่จะใช้งานจริง ทั้งกลางวัน กลางคืน และระยะใกล้-ไกล</p></div></details>
     <details><summary>ทำไมภาพกระตุกหรือค้าง</summary>
       <div class="body"><p>ระบบรันโมเดลสองตัวต่อเฟรม เครื่องที่ช้าอาจได้เพียงไม่กี่เฟรมต่อวินาที ลองปิดแอปอื่น หรือใช้โปรแกรมเวอร์ชันรันในเครื่อง (แท็บดาวน์โหลด) ซึ่งเร็วกว่า</p></div></details>
     <details><summary>ทำไมต้องหามอเตอร์ไซค์ก่อน</summary>
@@ -354,7 +396,7 @@ let vehSession = null, session = null, lastBeep = 0, devices = [], loopOn = fals
 const cams = [];
 
 function setStatus(t) { $("msg").textContent = t; }
-function chip(id, state) { $(id).dataset.state = state; }
+function chip(id, state) { $(id).dataset.state = state; const t = $("t" + id.charAt(0).toUpperCase() + id.slice(1)); if (t) t.dataset.state = state; }
 function setLine(kind, text) { const l = $("line"); l.dataset.kind = kind; $("lineText").textContent = text; }
 
 async function loadModel(source) {
@@ -567,8 +609,7 @@ async function detect(sess, src, sx, sy, sw, sh, conf) {
 
 // ขั้นที่ 1: หารถมอเตอร์ไซค์ + คน -> จับคู่คนที่ซ้อนอยู่บนรถ
 // ขั้นที่ 2: ตัดภาพคนขับ -> ตรวจหมวกกันน็อก
-async function analyze(cam, conf) {
-  const video = cam.video, W = video.videoWidth, H = video.videoHeight;
+async function analyze(video, W, H, conf) {
   const veh = await detect(vehSession, video, 0, 0, W, H, 0.4);
   const bikes = veh.filter(d => d.cls === 3), persons = veh.filter(d => d.cls === 0);
   const riders = [];
@@ -589,8 +630,8 @@ async function analyze(cam, conf) {
   return { bikes, riders };
 }
 
-function draw(cam, { bikes, riders }) {
-  const ctx = cam.ctx, canvas = cam.canvas;
+// วาดกรอบลงบน canvas (ใช้ร่วมกันทั้งกล้องและหน้าทดสอบ)
+function paint(ctx, canvas, { bikes, riders }) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.lineWidth = Math.max(2, canvas.width / 320);
   ctx.font = `${Math.max(14, canvas.width / 50)}px sans-serif`;
@@ -602,10 +643,17 @@ function draw(cam, { bikes, riders }) {
   bikes.forEach(b => box(b, "#3b82f6", "motorcycle"));
   let ok = 0, bad = 0;
   for (const r of riders) {
-    if (r.status === "yes") { ok++; box(r.box, "#22c55e", "สวมหมวก"); }
-    else if (r.status === "no") { bad++; box(r.box, "#ef4444", "ไม่สวมหมวก"); }
+    const pct = r.score ? " " + Math.round(r.score * 100) + "%" : "";
+    if (r.status === "yes") { ok++; box(r.box, "#22c55e", "สวมหมวก" + pct); }
+    else if (r.status === "no") { bad++; box(r.box, "#ef4444", "ไม่สวมหมวก" + pct); }
     else box(r.box, "#94a3b8", "ไม่ชัดเจน");
   }
+  return { ok, bad };
+}
+
+function draw(cam, res) {
+  const { riders } = res;
+  const { ok, bad } = paint(cam.ctx, cam.canvas, res);
   cam.ok = ok; cam.bad = bad; cam.riders = riders.length;
   cam.tile.dataset.state = bad ? "bad" : ok ? "ok" : "run";
   cam.badge.textContent = cam.name + " · " + (bad ? "ไม่สวมหมวก " + bad : ok ? "สวมหมวก " + ok : riders.length ? "ดูหมวกไม่ชัด" : "ไม่พบผู้ขับขี่");
@@ -646,7 +694,7 @@ async function loop() {
       const round = performance.now(); let did = false;
       for (const cam of cams.slice()) {
         if (!cam.ready || cam.video.readyState < 2 || !session || !vehSession || !cams.includes(cam)) continue;
-        const res = await analyze(cam, parseFloat($("conf").value));
+        const res = await analyze(cam.video, cam.video.videoWidth, cam.video.videoHeight, parseFloat($("conf").value));
         if (!cams.includes(cam)) continue;      // ถูกปิดระหว่างประมวลผล
         draw(cam, res); did = true; frames++;
         const now = performance.now();
@@ -777,11 +825,125 @@ $("clearAll").onclick = async () => {
   renderShots();
 })();
 
+// ===== โหมดทดสอบด้วยไฟล์ =====
+const TT = { token: 0, url: null, last: null };
+const tCtx = $("tCanvas").getContext("2d");
+function tLine(kind, text) { $("tLine").dataset.kind = kind; $("tLineText").textContent = text; }
+function modelsReady() { return !!(session && ($("tMode").value === "helmet" || vehSession)); }
+
+// โหมดเฉพาะหมวก: ส่งทั้งภาพเข้าโมเดลหมวกโดยตรง (ไม่ต้องหารถ)
+async function analyzeHelmetOnly(src, W, H, conf) {
+  const hd = await detect(session, src, 0, 0, W, H, conf);
+  return { bikes: [], riders: hd.map(d => ({ box: d, status: CLASS_NAMES[d.cls] === NO_HELMET ? "no" : "yes", score: d.score })) };
+}
+function runAnalyze(src, W, H, conf) {
+  return $("tMode").value === "helmet" ? analyzeHelmetOnly(src, W, H, conf) : analyze(src, W, H, conf);
+}
+
+function stopTest() {
+  TT.token++;
+  const v = $("tVid"); try { v.pause(); } catch {}
+  if (TT.url) { URL.revokeObjectURL(TT.url); TT.url = null; }
+}
+
+function showResult(res) {
+  const { riders } = res;
+  const c = paint(tCtx, $("tCanvas"), res);
+  $("tBox").dataset.state = c.bad ? "bad" : c.ok ? "ok" : "run";
+  const list = $("tList"); list.textContent = "";
+  if (riders.length) {
+    const ul = document.createElement("ul"); ul.className = "rlist";
+    riders.forEach((r, i) => {
+      const li = document.createElement("li");
+      const a = document.createElement("span"); a.textContent = "ผู้ขับขี่คนที่ " + (i + 1);
+      const b = document.createElement("b");
+      b.className = r.status === "yes" ? "ok" : r.status === "no" ? "no" : "un";
+      b.textContent = r.status === "yes" ? "สวมหมวก " + Math.round(r.score * 100) + "%"
+        : r.status === "no" ? "ไม่สวมหมวก " + Math.round(r.score * 100) + "%" : "ดูหมวกไม่ชัด";
+      li.append(a, b); ul.appendChild(li);
+    });
+    list.appendChild(ul);
+  }
+  return c;
+}
+
+async function testImage() {
+  const img = $("tImg"), conf = parseFloat($("tConf").value), tok = TT.token;
+  const res = await runAnalyze(img, img.naturalWidth, img.naturalHeight, conf);
+  if (tok !== TT.token) return;
+  TT.last = res;
+  const c = showResult(res), n = res.riders.length;
+  tLine(c.bad ? "bad" : n ? "ok" : "run",
+    n ? `พบ ${n} รายการ: สวมหมวก ${c.ok}, ไม่สวมหมวก ${c.bad}, ดูไม่ชัด ${n - c.ok - c.bad}`
+      : $("tMode").value === "helmet" ? "ไม่พบหมวกหรือศีรษะในภาพ ลองลดค่าความมั่นใจ หรือใช้ภาพที่เห็นคนชัดขึ้น"
+      : "ไม่พบมอเตอร์ไซค์ที่มีผู้ขับขี่ในภาพ ลองภาพที่เห็นรถและคนชัดขึ้น หรือสลับเป็นโหมดเฉพาะหมวก");
+  $("tSave").hidden = false;
+}
+
+async function testVideo(tok) {
+  const v = $("tVid"); let frames = 0, badFrames = 0, riderFrames = 0, maxBad = 0;
+  while (tok === TT.token) {
+    if (!v.paused && !v.ended && v.readyState >= 2) {
+      const res = await runAnalyze(v, v.videoWidth, v.videoHeight, parseFloat($("tConf").value));
+      if (tok !== TT.token) return;
+      const c = showResult(res);
+      frames++; if (res.riders.length) riderFrames++; if (c.bad) badFrames++; maxBad = Math.max(maxBad, c.bad);
+      tLine(c.bad ? "bad" : res.riders.length ? "ok" : "run",
+        `ตรวจแล้ว ${frames} เฟรม · เฟรมที่พบผู้ขับขี่ ${riderFrames} · พบไม่สวมหมวก ${badFrames} เฟรม (มากสุด ${maxBad} คนพร้อมกัน)`);
+    }
+    await new Promise(r => setTimeout(r, Math.max(50, parseInt($("gap").value, 10))));
+  }
+}
+
+$("testFile").onchange = async e => {
+  const f = e.target.files[0]; e.target.value = "";
+  if (!f) return;
+  stopTest();
+  if (!modelsReady()) { tLine("err", "โมเดลยังโหลดไม่เสร็จ หรือโหลดไม่สำเร็จ ดูรายละเอียดที่แท็บตรวจจับ → ตั้งค่า"); return; }
+  const tok = TT.token, url = TT.url = URL.createObjectURL(f);
+  $("tBox").hidden = false; $("tSave").hidden = true; $("tList").textContent = "";
+  const img = $("tImg"), vid = $("tVid"), cv = $("tCanvas");
+  try {
+    if (f.type.startsWith("video/")) {
+      img.hidden = true; vid.hidden = false;
+      tLine("run", "กำลังโหลดวิดีโอ…");
+      vid.src = url;
+      await new Promise((ok, no) => { vid.onloadedmetadata = ok; vid.onerror = () => no(new Error("เบราว์เซอร์เปิดวิดีโอนี้ไม่ได้")); });
+      cv.width = vid.videoWidth; cv.height = vid.videoHeight;
+      await vid.play();
+      testVideo(tok);
+    } else {
+      vid.hidden = true; img.hidden = false;
+      tLine("run", "กำลังตรวจ…");
+      img.src = url; await img.decode();
+      cv.width = img.naturalWidth; cv.height = img.naturalHeight;
+      await testImage();
+    }
+  } catch (err) { console.error(err); tLine("err", "ทดสอบไม่สำเร็จ: " + (err && err.message ? err.message : err)); }
+};
+$("tMode").onchange = () => {
+  if (!$("tImg").hidden && $("tImg").src && !TT.busy) { TT.busy = true; testImage().finally(() => TT.busy = false); }
+};
+$("tConf").oninput = e => {
+  $("tConfVal").textContent = parseFloat(e.target.value).toFixed(2);
+  if (!$("tImg").hidden && $("tImg").src && !TT.busy) { TT.busy = true; testImage().finally(() => TT.busy = false); }
+};
+$("tSave").onclick = () => {
+  const img = $("tImg"), c = document.createElement("canvas");
+  c.width = img.naturalWidth; c.height = img.naturalHeight;
+  const x = c.getContext("2d"); x.drawImage(img, 0, 0); x.drawImage($("tCanvas"), 0, 0);
+  c.toBlob(b => {
+    const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = "helmet_test_result.jpg";
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }, "image/jpeg", 0.9);
+};
+
 // ===== แท็บ =====
 const tabBtns = [...document.querySelectorAll("[data-tab]")];
 function showTab(name, push) {
   if (!document.getElementById("p-" + name)) name = "detect";
   if (name !== "detect" && cams.length) stopAll();
+  if (name !== "test") stopTest();
   tabBtns.forEach(t => t.setAttribute("aria-selected", String(t.dataset.tab === name)));
   document.querySelectorAll(".panel").forEach(p => p.hidden = p.id !== "p-" + name);
   if (push) { try { history.replaceState(null, "", "#" + name); } catch {} window.scrollTo(0, 0); }
