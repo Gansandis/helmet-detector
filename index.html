@@ -34,7 +34,7 @@
 
   /* ----- ส่วนหัว: ป้ายถนน + เส้นแบ่งเลน ----- */
   header { background:var(--road); color:var(--on-road); padding:calc(env(safe-area-inset-top,0px) + 18px) 20px 20px; }
-  .wrap { max-width:880px; margin:0 auto; }
+  .wrap { max-width:1000px; margin:0 auto; }
   header h1 { margin:0; font-size:1.55rem; font-weight:700; line-height:1.25; }
   header p { margin:4px 0 0; color:#B8BEC7; font-size:.95rem; }
   .lane { height:6px; background:repeating-linear-gradient(90deg,var(--mark) 0 28px,transparent 28px 46px); }
@@ -46,7 +46,7 @@
     color:var(--muted); font-weight:500; border-bottom:3px solid transparent; white-space:nowrap; }
   nav button[aria-selected="true"] { color:var(--sign); border-bottom-color:var(--sign); font-weight:600; }
 
-  main { max-width:880px; margin:0 auto; padding:16px 16px calc(env(safe-area-inset-bottom,0px) + 32px); }
+  main { max-width:1000px; margin:0 auto; padding:16px 16px calc(env(safe-area-inset-bottom,0px) + 32px); }
   .panel[hidden] { display:none; }
   h2 { font-size:1.2rem; margin:0 0 4px; }
   .lead { color:var(--muted); margin:0 0 16px; max-width:60ch; }
@@ -60,14 +60,26 @@
   .chip[data-state="error"]::before { background:var(--bad); }
   .chip em { font-style:normal; color:var(--ink); }
 
-  /* ----- เวทีกล้อง ----- */
-  .stage { position:relative; background:#000; border-radius:14px; overflow:hidden; aspect-ratio:4/3; }
-  .stage video, .stage canvas { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; }
-  .idle { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
-    gap:10px; text-align:center; padding:24px; color:#C9CED6; background:#101316; }
-  .idle[hidden] { display:none; }
-  .idle svg { width:56px; height:56px; stroke:#8A93A0; }
-  .idle b { color:#fff; font-size:1.05rem; }
+  /* ----- กล้อง (หลายตัวได้) ----- */
+  .grid { display:grid; gap:12px; grid-template-columns:1fr; }
+  @media (min-width:720px) { .grid[data-n="2"], .grid[data-n="3"], .grid[data-n="4"] { grid-template-columns:1fr 1fr; } }
+  .tile { background:var(--surface); border:2px solid var(--line); border-radius:14px; overflow:hidden; }
+  .tile[data-state="ok"] { border-color:var(--ok); }
+  .tile[data-state="bad"] { border-color:var(--bad); }
+  .view { position:relative; background:#000; aspect-ratio:4/3; }
+  .view video, .view canvas { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; }
+  .badge { position:absolute; left:0; top:0; background:rgba(0,0,0,.7); color:#fff; padding:4px 12px; border-radius:0 0 10px 0; font-size:.85rem; }
+  .tile[data-state="bad"] .badge { background:var(--bad); }
+  .bar { display:flex; gap:8px; padding:8px; }
+  .bar select { flex:1; min-width:0; min-height:40px; border-radius:10px; border:1px solid var(--line); background:var(--surface); padding:0 10px; }
+  .bar select[hidden] { display:none; }
+  .bar .btn { min-height:40px; padding:0 14px; font-size:.92rem; }
+  .placeholder { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; text-align:center;
+    aspect-ratio:4/3; padding:24px; border-radius:14px; color:#C9CED6; background:#101316; }
+  .placeholder[hidden] { display:none; }
+  .placeholder svg { width:56px; height:56px; stroke:#8A93A0; }
+  .placeholder b { color:#fff; font-size:1.05rem; }
+  .grid:not(:empty) { margin-bottom:0; }
 
   /* ----- แถบผลลัพธ์ ----- */
   .line { display:flex; align-items:center; gap:10px; margin-top:12px; padding:12px 16px; border-radius:12px;
@@ -185,28 +197,24 @@
       <span class="chip" id="chipHel" data-state="loading"><em>โมเดลหมวก</em></span>
     </div>
 
-    <div class="stage">
-      <video id="video" playsinline muted></video>
-      <canvas id="overlay"></canvas>
-      <div class="idle" id="idle">
-        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 10l4.55-2.27A1 1 0 0121 8.62v6.76a1 1 0 01-1.45.9L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
-        <b>กล้องยังไม่เปิด</b>
-        <span>ภาพจากกล้องถูกประมวลผลในเครื่องของคุณ ไม่ถูกส่งไปที่ไหน</span>
-      </div>
+    <div class="placeholder" id="idle">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 10l4.55-2.27A1 1 0 0121 8.62v6.76a1 1 0 01-1.45.9L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+      <b>กล้องยังไม่เปิด</b>
+      <span>ภาพจากกล้องถูกประมวลผลในเครื่องของคุณ ไม่ถูกส่งไปที่ไหน</span>
     </div>
+    <div class="grid" id="grid" data-n="0"></div>
 
     <div class="line" id="line" data-kind="idle" role="status" aria-live="polite"><span id="lineText">กดเปิดกล้องเพื่อเริ่มตรวจจับ</span></div>
 
     <div class="stats">
       <div class="ok"><b id="nHelmet">0</b><span>สวมหมวก</span></div>
       <div class="bad"><b id="nNo">0</b><span>ไม่สวมหมวก</span></div>
-      <div><b id="fps">0</b><span>เฟรมต่อวินาที</span></div>
+      <div><b id="fps">0</b><span>เฟรม/วินาที (รวม)</span></div>
     </div>
 
     <div class="actions">
-      <button class="btn grow" id="startBtn">เปิดกล้อง</button>
-      <button class="btn ghost grow" id="stopBtn" disabled>หยุด</button>
-      <select class="cam" id="cameraSel" aria-label="เลือกกล้อง" hidden></select>
+      <button class="btn grow" id="addBtn">เปิดกล้อง</button>
+      <button class="btn ghost grow" id="stopBtn" disabled>หยุดทั้งหมด</button>
     </div>
 
     <button class="linkbtn" id="goShots">ภาพที่บันทึกไว้: <span id="shotCount">0</span> ภาพ · ดูและดาวน์โหลด</button>
@@ -301,6 +309,10 @@
     <details><summary>เปิดกล้องไม่ได้ ต้องทำอย่างไร</summary>
       <div class="body"><p>เบราว์เซอร์จะอนุญาตกล้องเฉพาะเว็บที่เปิดผ่าน https ตรวจว่าลิงก์ขึ้นต้นด้วย https และกด "อนุญาต" เมื่อมีหน้าต่างขอใช้กล้อง</p>
       <p>ถ้าเคยกดไม่อนุญาตไว้ ให้ไปที่การตั้งค่าเว็บไซต์ในเบราว์เซอร์ แล้วเปิดสิทธิ์กล้องอีกครั้ง</p></div></details>
+    <details><summary>เปิดหลายกล้องพร้อมกันได้ไหม</summary>
+      <div class="body"><p>ได้สูงสุด 4 กล้อง กด "เพิ่มกล้อง" แล้วเลือกกล้องแต่ละช่องจากเมนูใต้ภาพ เหมาะกับคอมพิวเตอร์ที่ต่อกล้อง USB หลายตัว</p>
+      <p>มือถือส่วนใหญ่เปิดกล้องหน้าและหลังพร้อมกันไม่ได้ ถ้าเปิดตัวที่สองแล้วตัวแรกดับ ถือว่าเครื่องไม่รองรับ</p>
+      <p>ยิ่งเปิดหลายกล้อง แต่ละกล้องจะถูกตรวจถี่น้อยลง เพราะใช้เครื่องคำนวณร่วมกัน กล้อง IP/RTSP เปิดในเว็บตรง ๆ ไม่ได้ ให้ใช้โปรแกรมเวอร์ชันรันในเครื่อง</p></div></details>
     <details><summary>ทำไมภาพกระตุกหรือค้าง</summary>
       <div class="body"><p>ระบบรันโมเดลสองตัวต่อเฟรม เครื่องที่ช้าอาจได้เพียงไม่กี่เฟรมต่อวินาที ลองปิดแอปอื่น หรือใช้โปรแกรมเวอร์ชันรันในเครื่อง (แท็บดาวน์โหลด) ซึ่งเร็วกว่า</p></div></details>
     <details><summary>ทำไมต้องหามอเตอร์ไซค์ก่อน</summary>
@@ -313,11 +325,11 @@
 <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.3/dist/ort.min.js"></script>
 <script>
 // ===== ตั้งค่า =====
-const VEH_URL = "yolov8n.onnx";         // โมเดลจับรถ/คน (COCO) ใช้ของสำเร็จรูป ไม่ต้องเทรน
-const MODEL_URL = "best.onnx";          // โมเดลหมวกกันน็อกที่เทรนเอง
+const VEH_URL = "yolov8n.onnx";               // โมเดลจับรถ/คน (COCO) ใช้ของสำเร็จรูป ไม่ต้องเทรน
+const MODEL_URL = "best.onnx";                // โมเดลหมวกกันน็อกที่เทรนเอง
 const CLASS_NAMES = ["helmet detect", "helmet not detect"];  // ลำดับต้องตรงกับ data.yaml ตอนเทรน
 const NO_HELMET = "helmet not detect";                        // ชื่อคลาส "ไม่สวมหมวก"
-const INPUT = 640, IOU_THRESH = 0.45;
+const INPUT = 640, IOU_THRESH = 0.45, MAX_CAMS = 4;
 
 if (window.ort) {
   ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.3/dist/";
@@ -335,11 +347,11 @@ async function makeSession(src) {
 }
 
 const $ = id => document.getElementById(id);
-const video = $("video"), canvas = $("overlay"), ctx = canvas.getContext("2d");
 const work = document.createElement("canvas"); work.width = work.height = INPUT;
 const wctx = work.getContext("2d", { willReadFrequently: true });
 
-let vehSession = null, session = null, stream = null, running = false, lastBeep = 0;
+let vehSession = null, session = null, lastBeep = 0, devices = [], loopOn = false, adding = false;
+const cams = [];
 
 function setStatus(t) { $("msg").textContent = t; }
 function chip(id, state) { $(id).dataset.state = state; }
@@ -355,69 +367,145 @@ async function loadModel(source) {
     setStatus("โหลดโมเดลหมวกไม่สำเร็จ: ตรวจสอบว่ามีไฟล์ " + MODEL_URL + " อยู่ข้าง index.html หรือเลือกไฟล์ .onnx ในหน้าตั้งค่า");
   }
 }
-
 async function loadVeh() {
   chip("chipVeh", "loading");
   try { vehSession = await makeSession(VEH_URL); chip("chipVeh", "ready"); }
   catch (e) { vehSession = null; chip("chipVeh", "error"); setStatus("โหลดโมเดลจับรถไม่สำเร็จ: ตรวจสอบว่ามีไฟล์ " + VEH_URL + " อยู่ข้าง index.html"); }
 }
 
-async function listCameras(activeId) {
+// ===== กล้อง =====
+async function refreshDevices() {
   try {
-    const sel = $("cameraSel");
-    const keep = activeId || sel.value;
-    const devs = (await navigator.mediaDevices.enumerateDevices())
+    devices = (await navigator.mediaDevices.enumerateDevices())
       .filter(d => d.kind === "videoinput" && d.deviceId);   // ก่อนอนุญาตกล้อง id จะว่าง
-    sel.innerHTML = "";
-    devs.forEach((d, i) => {
-      const o = document.createElement("option");
-      o.value = d.deviceId; o.textContent = d.label || "กล้อง " + (i + 1);
-      sel.appendChild(o);
-    });
-    if (devs.some(d => d.deviceId === keep)) sel.value = keep;   // คงกล้องที่ใช้อยู่ไว้
-    sel.hidden = devs.length < 2;
   } catch {}
+  cams.forEach(fillSelect);
+}
+function fillSelect(cam) {
+  const sel = cam.sel; sel.textContent = "";
+  devices.forEach((d, i) => {
+    const o = document.createElement("option");
+    o.value = d.deviceId; o.textContent = d.label || "กล้อง " + (i + 1);
+    sel.appendChild(o);
+  });
+  if (cam.deviceId) sel.value = cam.deviceId;
+  sel.hidden = devices.length < 2;
 }
 
-async function openStream() {
-  const id = $("cameraSel").value;
+async function openStream(id) {
   const size = { width: { ideal: 1280 }, height: { ideal: 720 } };
   if (id) {
     try { return await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: id }, ...size } }); }
-    catch (e) { /* id เก่า/ใช้ไม่ได้ ลองกล้องเริ่มต้นต่อ */ }
+    catch (e) { if (e.name !== "OverconstrainedError" && e.name !== "NotFoundError") throw e; }
   }
-  // ไม่ได้เลือกกล้อง: ใช้กล้องหลังก่อน (เหมาะกับถ่ายถนน) ถ้าไม่มีจะใช้กล้องที่มี
+  // ไม่ได้ระบุกล้อง: ใช้กล้องหลังก่อน (เหมาะกับถ่ายถนน) ถ้าไม่มีจะใช้กล้องที่มี
   return navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, ...size } });
 }
 
-async function start() {
+function makeTile() {
+  let n = 1; while (cams.some(c => c.n === n)) n++;
+  const tile = document.createElement("div"); tile.className = "tile"; tile.dataset.state = "run";
+  tile.innerHTML = '<div class="view"><video playsinline muted></video><canvas></canvas><div class="badge"></div></div>' +
+    '<div class="bar"><select aria-label="เลือกกล้อง"></select><button class="btn ghost">ปิดกล้อง</button></div>';
+  const cam = {
+    n, name: "กล้อง " + n, tile, ready: false, stream: null, deviceId: null, ok: 0, bad: 0, riders: 0,
+    last: { no: 0, unsure: 0 },
+    video: tile.querySelector("video"), canvas: tile.querySelector("canvas"),
+    badge: tile.querySelector(".badge"), sel: tile.querySelector("select"),
+  };
+  cam.ctx = cam.canvas.getContext("2d");
+  cam.badge.textContent = cam.name + " · กำลังเปิด…";
+  tile.querySelector("button").onclick = () => removeCam(cam);
+  cam.sel.onchange = () => switchDevice(cam, cam.sel.value);
+  cams.push(cam); cams.sort((a, b) => a.n - b.n);
+  $("grid").replaceChildren(...cams.map(c => c.tile));
+  updateControls();
+  return cam;
+}
+
+async function attach(cam, id) {
+  if (cam.stream) cam.stream.getTracks().forEach(t => t.stop());
+  cam.ready = false;
+  const stream = await openStream(id);
+  cam.stream = stream; cam.video.srcObject = stream;
+  await cam.video.play();
+  cam.canvas.width = cam.video.videoWidth; cam.canvas.height = cam.video.videoHeight;
+  const track = stream.getVideoTracks()[0];
+  cam.deviceId = track.getSettings().deviceId || id;
+  // ถ้าเครื่องปิดกล้องเราเอง (เช่น มือถือที่เปิดสองกล้องพร้อมกันไม่ได้)
+  track.onended = () => {
+    if (cams.includes(cam) && cam.stream === stream) {
+      toast(cam.name + " ถูกระบบปิด เครื่องนี้อาจเปิดหลายกล้องพร้อมกันไม่ได้");
+      removeCam(cam);
+    }
+  };
+  await refreshDevices();
+  cam.ready = true;
+  cam.badge.textContent = cam.name;
+}
+
+function camError(e) {
+  const busy = e && (e.name === "NotReadableError" || e.name === "AbortError");
+  const msg = busy ? "เปิดกล้องไม่ได้ กล้องนี้ถูกใช้งานอยู่ หรือเครื่องเปิดหลายกล้องพร้อมกันไม่ได้"
+                   : "เปิดกล้องไม่ได้: " + (e && e.message ? e.message : e);
+  setStatus(msg + " (ต้องเปิดผ่าน https และอนุญาตการใช้กล้อง)");
+  toast(msg);
+}
+
+async function addCamera() {
+  if (adding) return;
+  if (cams.length >= MAX_CAMS) { toast("เปิดได้สูงสุด " + MAX_CAMS + " กล้อง"); return; }
+  let id = null;
+  if (cams.length && devices.length) {
+    const used = new Set(cams.map(c => c.deviceId));
+    const free = devices.find(d => !used.has(d.deviceId));
+    if (!free) { toast("ไม่มีกล้องเหลือให้เปิดเพิ่ม"); return; }
+    id = free.deviceId;
+  }
+  adding = true; updateControls();
+  const cam = makeTile();
   try {
-    stream = await openStream();
-    video.srcObject = stream;
-    await video.play();
-    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-    await listCameras(stream.getVideoTracks()[0].getSettings().deviceId);
-    running = true;
-    $("idle").hidden = true;
-    $("startBtn").disabled = true; $("stopBtn").disabled = false;
-    setLine("run", "กำลังเตรียมโมเดล ครั้งแรกอาจใช้เวลาสักครู่…");
+    await attach(cam, id);
+    if (cams.length === 1) setLine("run", "กำลังเตรียมโมเดล ครั้งแรกอาจใช้เวลาสักครู่…");
     loop();
   } catch (e) {
-    setStatus("เปิดกล้องไม่ได้: " + e.message + " ต้องเปิดผ่าน https และอนุญาตการใช้กล้องในเบราว์เซอร์");
-    setLine("idle", "เปิดกล้องไม่สำเร็จ ดูรายละเอียดในหน้าตั้งค่า");
+    removeCam(cam); camError(e);
+  } finally { adding = false; updateControls(); }
+}
+
+async function switchDevice(cam, id) {
+  if (id === cam.deviceId) return;
+  if (cams.some(c => c !== cam && c.deviceId === id)) {
+    toast("กล้องนี้ถูกใช้ในช่องอื่นอยู่แล้ว"); cam.sel.value = cam.deviceId; return;
+  }
+  const old = cam.deviceId;
+  try { await attach(cam, id); }
+  catch (e) { camError(e); cam.sel.value = old; try { await attach(cam, old); } catch { removeCam(cam); } }
+}
+
+function removeCam(cam) {
+  const i = cams.indexOf(cam); if (i < 0) return;
+  cams.splice(i, 1);
+  cam.ready = false;
+  if (cam.stream) { cam.stream.getVideoTracks().forEach(t => { t.onended = null; t.stop(); }); }
+  cam.tile.remove();
+  updateControls();
+  if (!cams.length) {
+    $("nHelmet").textContent = 0; $("nNo").textContent = 0; $("fps").textContent = 0;
+    setLine("idle", "กดเปิดกล้องเพื่อเริ่มตรวจจับ");
   }
 }
+function stopAll() { cams.slice().forEach(removeCam); }
 
-function stop() {
-  running = false;
-  if (stream) stream.getTracks().forEach(t => t.stop());
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  $("idle").hidden = false;
-  $("nHelmet").textContent = 0; $("nNo").textContent = 0; $("fps").textContent = 0;
-  $("startBtn").disabled = false; $("stopBtn").disabled = true;
-  setLine("idle", "กดเปิดกล้องเพื่อเริ่มตรวจจับ");
+function updateControls() {
+  $("grid").dataset.n = cams.length;
+  $("idle").hidden = cams.length > 0;
+  $("addBtn").textContent = cams.length ? "เพิ่มกล้อง" : "เปิดกล้อง";
+  $("addBtn").disabled = adding || cams.length >= MAX_CAMS;
+  $("stopBtn").disabled = cams.length === 0;
 }
 
+// ===== ตรวจจับ =====
 function prep(src, sx, sy, sw, sh) {
   const scale = Math.min(INPUT / sw, INPUT / sh);
   const nw = Math.round(sw * scale), nh = Math.round(sh * scale);
@@ -479,8 +567,8 @@ async function detect(sess, src, sx, sy, sw, sh, conf) {
 
 // ขั้นที่ 1: หารถมอเตอร์ไซค์ + คน -> จับคู่คนที่ซ้อนอยู่บนรถ
 // ขั้นที่ 2: ตัดภาพคนขับ -> ตรวจหมวกกันน็อก
-async function analyze(conf) {
-  const W = video.videoWidth, H = video.videoHeight;
+async function analyze(cam, conf) {
+  const video = cam.video, W = video.videoWidth, H = video.videoHeight;
   const veh = await detect(vehSession, video, 0, 0, W, H, 0.4);
   const bikes = veh.filter(d => d.cls === 3), persons = veh.filter(d => d.cls === 0);
   const riders = [];
@@ -501,7 +589,8 @@ async function analyze(conf) {
   return { bikes, riders };
 }
 
-function draw({ bikes, riders }) {
+function draw(cam, { bikes, riders }) {
+  const ctx = cam.ctx, canvas = cam.canvas;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.lineWidth = Math.max(2, canvas.width / 320);
   ctx.font = `${Math.max(14, canvas.width / 50)}px sans-serif`;
@@ -517,16 +606,26 @@ function draw({ bikes, riders }) {
     else if (r.status === "no") { bad++; box(r.box, "#ef4444", "ไม่สวมหมวก"); }
     else box(r.box, "#94a3b8", "ไม่ชัดเจน");
   }
-  $("nHelmet").textContent = ok; $("nNo").textContent = bad;
-  if (bad) setLine("bad", "พบผู้ขับขี่ไม่สวมหมวก " + bad + " คน");
-  else if (ok) setLine("ok", "ผู้ขับขี่ทุกคนสวมหมวก (" + ok + " คน)");
-  else setLine("run", riders.length ? "พบผู้ขับขี่ แต่ยังดูหมวกไม่ชัด" : "กำลังตรวจจับ ยังไม่พบมอเตอร์ไซค์ในภาพ");
+  cam.ok = ok; cam.bad = bad; cam.riders = riders.length;
+  cam.tile.dataset.state = bad ? "bad" : ok ? "ok" : "run";
+  cam.badge.textContent = cam.name + " · " + (bad ? "ไม่สวมหมวก " + bad : ok ? "สวมหมวก " + ok : riders.length ? "ดูหมวกไม่ชัด" : "ไม่พบผู้ขับขี่");
+
   const strong = riders.filter(r => r.status === "no" && r.score >= UNSURE_BELOW).length;
   const unsure = riders.filter(r => r.score < UNSURE_BELOW || r.status === "unknown").length;
   const now = Date.now();
-  if (strong && $("saveNo").checked && now - lastSnap.no > 3000) { lastSnap.no = now; snap("no", strong); }
-  else if (unsure && $("saveUnsure").checked && now - lastSnap.unsure > 5000) { lastSnap.unsure = now; snap("unsure", unsure); }
-  if (bad && $("beep").checked && Date.now() - lastBeep > 3000) { lastBeep = Date.now(); beep(); }
+  if (strong && $("saveNo").checked && now - cam.last.no > 3000) { cam.last.no = now; snap(cam, "no", strong); }
+  else if (unsure && $("saveUnsure").checked && now - cam.last.unsure > 5000) { cam.last.unsure = now; snap(cam, "unsure", unsure); }
+  if (bad && $("beep").checked && now - lastBeep > 3000) { lastBeep = now; beep(); }
+}
+
+// สรุปผลรวมทุกกล้อง
+function summarize() {
+  const ok = cams.reduce((s, c) => s + c.ok, 0), bad = cams.reduce((s, c) => s + c.bad, 0);
+  $("nHelmet").textContent = ok; $("nNo").textContent = bad;
+  const badCams = cams.filter(c => c.bad).map(c => c.name);
+  if (bad) setLine("bad", "พบผู้ขับขี่ไม่สวมหมวก " + bad + " คน" + (cams.length > 1 ? " (" + badCams.join(", ") + ")" : ""));
+  else if (ok) setLine("ok", "ผู้ขับขี่ทุกคนสวมหมวก (" + ok + " คน)");
+  else setLine("run", cams.some(c => c.riders) ? "พบผู้ขับขี่ แต่ยังดูหมวกไม่ชัด" : "กำลังตรวจจับ ยังไม่พบมอเตอร์ไซค์ในภาพ");
 }
 
 function beep() {
@@ -537,43 +636,42 @@ function beep() {
   } catch {}
 }
 
+// ลูปเดียวสลับตรวจทีละกล้อง (ใช้โมเดลร่วมกัน)
 async function loop() {
+  if (loopOn) return;
+  loopOn = true;
   let frames = 0, t0 = performance.now();
   try {
-    while (running) {
-      if (session && vehSession && video.readyState >= 2) {
-        const t = performance.now();
-        const res = await analyze(parseFloat($("conf").value));
-        if (!running) break;      // ผู้ใช้กดหยุดระหว่างประมวลผล
-        draw(res);
-        frames++;
+    while (cams.length) {
+      const round = performance.now(); let did = false;
+      for (const cam of cams.slice()) {
+        if (!cam.ready || cam.video.readyState < 2 || !session || !vehSession || !cams.includes(cam)) continue;
+        const res = await analyze(cam, parseFloat($("conf").value));
+        if (!cams.includes(cam)) continue;      // ถูกปิดระหว่างประมวลผล
+        draw(cam, res); did = true; frames++;
         const now = performance.now();
         if (now - t0 > 1000) { $("fps").textContent = (frames * 1000 / (now - t0)).toFixed(1); frames = 0; t0 = now; }
-        // เว้นช่วงให้เครื่องได้พัก ไม่ให้หน้าเว็บค้าง
-        await new Promise(r => setTimeout(r, Math.max(0, parseInt($("gap").value, 10) - (now - t))));
-      } else {
-        await new Promise(r => setTimeout(r, 200));
       }
+      if (did) summarize();
+      // เว้นช่วงให้เครื่องได้พัก ไม่ให้หน้าเว็บค้าง
+      const wait = did ? Math.max(0, parseInt($("gap").value, 10) - (performance.now() - round)) : 200;
+      await new Promise(r => setTimeout(r, wait));
     }
   } catch (e) {
     console.error(e);
-    stop();
+    stopAll();
     setLine("err", "ตรวจจับไม่สำเร็จ: " + (e && e.message ? e.message : e));
     setStatus("เกิดข้อผิดพลาดระหว่างตรวจจับ: " + (e && e.message ? e.message : e));
-  }
+  } finally { loopOn = false; }
 }
 
-$("startBtn").onclick = start;
-$("cameraSel").onchange = async () => { if (running) { stop(); await start(); } };
-$("stopBtn").onclick = stop;
+$("addBtn").onclick = addCamera;
+$("stopBtn").onclick = stopAll;
 $("conf").oninput = e => $("confVal").textContent = parseFloat(e.target.value).toFixed(2);
 $("modelFile").onchange = async e => {
   const f = e.target.files[0];
   if (f) await loadModel(new Uint8Array(await f.arrayBuffer()));
 };
-loadVeh();
-loadModel(MODEL_URL);
-listCameras();
 
 // ===== บันทึกภาพ =====
 const MAX_SHOTS = 60, UNSURE_BELOW = 0.6;
@@ -605,29 +703,29 @@ function toast(msg) {
 const pad = n => String(n).padStart(2, "0");
 function stamp(t) { const d = new Date(t); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; }
 
-function snap(kind, n) {
+function snap(cam, kind, n) {
   try {
-    const W = canvas.width, H = canvas.height; if (!W || !H) return;
+    const W = cam.canvas.width, H = cam.canvas.height; if (!W || !H) return;
     const c = document.createElement("canvas"); c.width = W; c.height = H;
     const x = c.getContext("2d");
-    x.drawImage(video, 0, 0, W, H); x.drawImage(canvas, 0, 0);          // ภาพกล้อง + กรอบที่วาดไว้
+    x.drawImage(cam.video, 0, 0, W, H); x.drawImage(cam.canvas, 0, 0);          // ภาพกล้อง + กรอบที่วาดไว้
     const fs = Math.max(14, W / 50);
     x.fillStyle = "rgba(0,0,0,.6)"; x.fillRect(0, H - fs * 1.9, W, fs * 1.9);
     x.fillStyle = "#fff"; x.font = `${fs}px sans-serif`;
-    x.fillText(stamp(Date.now()) + "  " + KIND_TH[kind] + " " + n + " คน", 10, H - fs * 0.55);
-    c.toBlob(b => { if (b) addShot(kind, n, b); }, "image/jpeg", 0.85);
+    x.fillText(cam.name + "  " + stamp(Date.now()) + "  " + KIND_TH[kind] + " " + n + " คน", 10, H - fs * 0.55);
+    c.toBlob(b => { if (b) addShot(kind, n, b, cam); }, "image/jpeg", 0.85);
   } catch (e) { console.error(e); }
 }
 
-async function addShot(kind, n, blob) {
-  const rec = { t: Date.now(), kind, n, blob };
+async function addShot(kind, n, blob, cam) {
+  const rec = { t: Date.now(), kind, n, blob, cam: cam.name, camN: cam.n };
   const id = await dbDo("readwrite", st => st.add(rec));
   rec.id = id != null ? id : "m" + rec.t;
   rec.url = URL.createObjectURL(blob);
   shots.unshift(rec);
   while (shots.length > MAX_SHOTS) await removeShot(shots[shots.length - 1], false);
   renderShots();
-  toast("บันทึกภาพแล้ว (" + KIND_TH[kind] + ")");
+  toast("บันทึกภาพแล้ว · " + cam.name + " · " + KIND_TH[kind]);
 }
 
 async function removeShot(s, render = true) {
@@ -639,7 +737,7 @@ async function removeShot(s, render = true) {
 
 function download(s) {
   const a = document.createElement("a");
-  a.href = s.url; a.download = `helmet_${s.kind}_${stamp(s.t).replace(/[: ]/g, "-")}.jpg`;
+  a.href = s.url; a.download = `helmet_cam${s.camN || 1}_${s.kind}_${stamp(s.t).replace(/[: ]/g, "-")}.jpg`;
   document.body.appendChild(a); a.click(); a.remove();
 }
 
@@ -655,7 +753,7 @@ function renderShots() {
     const img = document.createElement("img"); img.src = s.url; img.alt = "ภาพ" + KIND_TH[s.kind]; img.loading = "lazy";
     const cap = document.createElement("figcaption");
     const tag = document.createElement("span"); tag.className = "tag " + s.kind; tag.textContent = KIND_TH[s.kind];
-    cap.append(tag, stamp(s.t).slice(5));
+    cap.append(tag, (s.cam ? s.cam + " · " : "") + stamp(s.t).slice(5));
     const row = document.createElement("div"); row.className = "row";
     const d = document.createElement("button"); d.className = "btn"; d.textContent = "ดาวน์โหลด"; d.onclick = () => download(s);
     const x = document.createElement("button"); x.className = "btn danger"; x.textContent = "ลบ"; x.onclick = () => removeShot(s);
@@ -683,13 +781,18 @@ $("clearAll").onclick = async () => {
 const tabBtns = [...document.querySelectorAll("[data-tab]")];
 function showTab(name, push) {
   if (!document.getElementById("p-" + name)) name = "detect";
-  if (name !== "detect" && running) stop();
+  if (name !== "detect" && cams.length) stopAll();
   tabBtns.forEach(t => t.setAttribute("aria-selected", String(t.dataset.tab === name)));
   document.querySelectorAll(".panel").forEach(p => p.hidden = p.id !== "p-" + name);
   if (push) { try { history.replaceState(null, "", "#" + name); } catch {} window.scrollTo(0, 0); }
 }
 tabBtns.forEach(t => t.onclick = () => showTab(t.dataset.tab, true));
 showTab(location.hash.slice(1) || "detect", false);
+
+updateControls();
+loadVeh();
+loadModel(MODEL_URL);
+refreshDevices();
 </script>
 </body>
 </html>
