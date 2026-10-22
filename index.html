@@ -689,14 +689,15 @@ function draw(cam, res) {
   const { ok, bad } = paint(cam.ctx, cam.canvas, res);
   cam.ok = ok; cam.bad = bad; cam.riders = riders.length;
   cam.tile.dataset.state = bad ? "bad" : ok ? "ok" : "run";
-  cam.badge.textContent = cam.name + " · " + (bad ? "ไม่สวมหมวก " + bad : ok ? "สวมหมวก " + ok : riders.length ? "ดูหมวกไม่ชัด" : "ไม่พบผู้ขับขี่");
+  cam.badge.textContent = cam.name + " · " + (bad ? "ไม่สวมหมวก " + bad : ok ? "สวมหมวก " + ok : riders.length ? "ดูหมวกไม่ชัด" : "ไม่พบผู้ขับขี่")
+    + (res.ms > 1500 ? " · ผลล่าช้า " + Math.round(res.ms / 1000) + " วิ" : "");
 
   const strong = riders.filter(r => r.status === "no" && r.score >= UNSURE_BELOW).length;
   const unsure = riders.filter(r => r.score < UNSURE_BELOW || r.status === "unknown").length;
   const now = Date.now();
   const snapMs = parseInt($("snapGap").value, 10) || 2000;
-  if (strong && $("saveNo").checked && now - cam.last.no > snapMs) { cam.last.no = now; snap(cam, "no", strong); }
-  else if (unsure && $("saveUnsure").checked && now - cam.last.unsure > snapMs) { cam.last.unsure = now; snap(cam, "unsure", unsure); }
+  if (strong && $("saveNo").checked && now - cam.last.no > snapMs) { cam.last.no = now; snap(cam, "no", strong, res.frame); }
+  else if (unsure && $("saveUnsure").checked && now - cam.last.unsure > snapMs) { cam.last.unsure = now; snap(cam, "unsure", unsure, res.frame); }
   if (bad && $("beep").checked && now - lastBeep > 3000) { lastBeep = now; beep(); }
 }
 
@@ -729,7 +730,11 @@ async function loop() {
       const round = performance.now(); let did = false;
       for (const cam of cams.slice()) {
         if (!cam.ready || cam.video.readyState < 2 || !session || !vehSession || !cams.includes(cam)) continue;
-        const res = await analyze(cam.video, cam.video.videoWidth, cam.video.videoHeight, parseFloat($("conf").value));
+        const t1 = performance.now(), W = cam.video.videoWidth, H = cam.video.videoHeight;
+        const frame = document.createElement("canvas"); frame.width = W; frame.height = H;
+        frame.getContext("2d").drawImage(cam.video, 0, 0, W, H);       // เก็บเฟรมที่กำลังตรวจไว้ ให้ภาพที่บันทึกตรงกับผลตรวจ
+        const res = await analyze(frame, W, H, parseFloat($("conf").value));
+        res.frame = frame; res.ms = performance.now() - t1;
         if (!cams.includes(cam)) continue;      // ถูกปิดระหว่างประมวลผล
         draw(cam, res); did = true; frames++;
         const now = performance.now();
@@ -804,12 +809,12 @@ function toast(msg) {
 const pad = n => String(n).padStart(2, "0");
 function stamp(t) { const d = new Date(t); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; }
 
-function snap(cam, kind, n) {
+function snap(cam, kind, n, frame) {
   try {
     const W = cam.canvas.width, H = cam.canvas.height; if (!W || !H) return;
     const c = document.createElement("canvas"); c.width = W; c.height = H;
     const x = c.getContext("2d");
-    x.drawImage(cam.video, 0, 0, W, H); x.drawImage(cam.canvas, 0, 0);          // ภาพกล้อง + กรอบที่วาดไว้
+    x.drawImage(frame || cam.video, 0, 0, W, H); x.drawImage(cam.canvas, 0, 0);          // ภาพกล้อง + กรอบที่วาดไว้
     const fs = Math.max(14, W / 50);
     x.fillStyle = "rgba(0,0,0,.6)"; x.fillRect(0, H - fs * 1.9, W, fs * 1.9);
     x.fillStyle = "#fff"; x.font = `${fs}px sans-serif`;
