@@ -241,9 +241,17 @@
         </label>
         <label>ความถี่ในการตรวจ
           <select id="gap" class="cam" style="min-height:44px">
-            <option value="0">เร็วสุด (กินเครื่องมาก)</option>
-            <option value="250" selected>สมดุล</option>
+            <option value="0" selected>เร็วสุด (แนะนำ)</option>
+            <option value="250">สมดุล</option>
             <option value="700">ประหยัด (เหมาะกับมือถือเก่า)</option>
+          </select>
+        </label>
+        <label>บันทึกภาพไม่ถี่เกินกว่า
+          <select id="snapGap" class="cam" style="min-height:44px">
+            <option value="1000">ทุก 1 วินาที</option>
+            <option value="2000" selected>ทุก 2 วินาที</option>
+            <option value="5000">ทุก 5 วินาที</option>
+            <option value="10000">ทุก 10 วินาที</option>
           </select>
         </label>
         <label class="inline"><input id="saveNo" type="checkbox" checked> บันทึกภาพอัตโนมัติเมื่อพบผู้ไม่สวมหมวก</label>
@@ -295,7 +303,7 @@
     <h2>ภาพที่บันทึก</h2>
     <p class="lead">ระบบบันทึกภาพให้เองเมื่อพบผู้ไม่สวมหมวก หรือเมื่อไม่มั่นใจ ภาพเก็บไว้ในเบราว์เซอร์ของเครื่องนี้เท่านั้น</p>
     <div class="tools" id="shotTools" hidden>
-      <span class="count">ทั้งหมด <b id="shotTotal">0</b> ภาพ (เก็บล่าสุดไม่เกิน 60 ภาพ)</span>
+      <span class="count">ทั้งหมด <b id="shotTotal">0</b> ภาพ (เก็บล่าสุดไม่เกิน 100 ภาพ)</span>
       <button class="btn sm" id="dlAll">ดาวน์โหลดทั้งหมด</button>
       <button class="btn sm danger" id="clearAll">ลบทั้งหมด</button>
     </div>
@@ -356,7 +364,7 @@
       <div class="body"><p>ได้ ไปที่แท็บ "ทดสอบ" เลือกภาพหรือวิดีโอจากเครื่อง ระบบจะวาดกรอบพร้อมเปอร์เซ็นต์ความมั่นใจ และปรับค่าความมั่นใจดูผลได้ทันที</p>
       <p>ควรทดสอบด้วยภาพจากมุมกล้องที่จะใช้งานจริง ทั้งกลางวัน กลางคืน และระยะใกล้-ไกล</p></div></details>
     <details><summary>ทำไมภาพกระตุกหรือค้าง</summary>
-      <div class="body"><p>ระบบรันโมเดลสองตัวต่อเฟรม เครื่องที่ช้าอาจได้เพียงไม่กี่เฟรมต่อวินาที ลองปิดแอปอื่น หรือใช้โปรแกรมเวอร์ชันรันในเครื่อง (แท็บดาวน์โหลด) ซึ่งเร็วกว่า</p></div></details>
+      <div class="body"><p>ระบบรันโมเดลสองตัวต่อเฟรม เครื่องที่ช้าอาจได้เพียงไม่กี่เฟรมต่อวินาที ที่ ตั้งค่า เลือกความถี่เป็น "ประหยัด" จะลื่นขึ้น ลองปิดแอปอื่น หรือใช้โปรแกรมเวอร์ชันรันในเครื่อง (แท็บดาวน์โหลด) ซึ่งเร็วกว่า</p></div></details>
     <details><summary>ทำไมต้องหามอเตอร์ไซค์ก่อน</summary>
       <div class="body"><p>เพื่อไม่ให้นับคนเดินถนนหรือคนยืนริมทางเป็นผู้ไม่สวมหมวก และทำให้หมวกในภาพที่ตัดมาใหญ่ขึ้น ตรวจได้แม่นกว่า</p></div></details>
   </section>
@@ -372,6 +380,8 @@ const MODEL_URL = "best.onnx";                // โมเดลหมวกก�
 const CLASS_NAMES = ["helmet detect", "helmet not detect"];  // ลำดับต้องตรงกับ data.yaml ตอนเทรน
 const NO_HELMET = "helmet not detect";                        // ชื่อคลาส "ไม่สวมหมวก"
 const INPUT = 640, IOU_THRESH = 0.45, MAX_CAMS = 4;
+// ขนาดภาพที่โมเดลแต่ละตัวถูก export ไว้ (ต้องตรงกับตอน export) ถ้า export เล็กลง เช่น 320 หรือ 416 จะตรวจเร็วขึ้นมาก
+const VEH_SIZE = 640, HEL_SIZE = 640;
 
 if (window.ort) {
   ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.3/dist/";
@@ -389,8 +399,14 @@ async function makeSession(src) {
 }
 
 const $ = id => document.getElementById(id);
-const work = document.createElement("canvas"); work.width = work.height = INPUT;
-const wctx = work.getContext("2d", { willReadFrequently: true });
+const works = {};
+function getWork(size) {
+  if (!works[size]) {
+    const c = document.createElement("canvas"); c.width = c.height = size;
+    works[size] = c.getContext("2d", { willReadFrequently: true });
+  }
+  return works[size];
+}
 
 let vehSession = null, session = null, lastBeep = 0, devices = [], loopOn = false, adding = false;
 const cams = [];
@@ -548,18 +564,19 @@ function updateControls() {
 }
 
 // ===== ตรวจจับ =====
-function prep(src, sx, sy, sw, sh) {
-  const scale = Math.min(INPUT / sw, INPUT / sh);
+function prep(src, sx, sy, sw, sh, size) {
+  const wctx = getWork(size);
+  const scale = Math.min(size / sw, size / sh);
   const nw = Math.round(sw * scale), nh = Math.round(sh * scale);
-  const px = (INPUT - nw) / 2, py = (INPUT - nh) / 2;
-  wctx.fillStyle = "rgb(114,114,114)"; wctx.fillRect(0, 0, INPUT, INPUT);
+  const px = (size - nw) / 2, py = (size - nh) / 2;
+  wctx.fillStyle = "rgb(114,114,114)"; wctx.fillRect(0, 0, size, size);
   wctx.drawImage(src, sx, sy, sw, sh, px, py, nw, nh);
-  const d = wctx.getImageData(0, 0, INPUT, INPUT).data;
-  const n = INPUT * INPUT, f = new Float32Array(3 * n);
+  const d = wctx.getImageData(0, 0, size, size).data;
+  const n = size * size, f = new Float32Array(3 * n);
   for (let i = 0; i < n; i++) {
     f[i] = d[i * 4] / 255; f[n + i] = d[i * 4 + 1] / 255; f[2 * n + i] = d[i * 4 + 2] / 255;
   }
-  return { tensor: new ort.Tensor("float32", f, [1, 3, INPUT, INPUT]), scale, px, py };
+  return { tensor: new ort.Tensor("float32", f, [1, 3, size, size]), scale, px, py };
 }
 
 function iou(a, b) {
@@ -600,8 +617,8 @@ function postprocess(out, scale, px, py, conf) {
 }
 
 // รันโมเดลบนส่วนหนึ่งของภาพ แล้วคืนกรอบในพิกัดภาพเต็ม
-async function detect(sess, src, sx, sy, sw, sh, conf) {
-  const { tensor, scale, px, py } = prep(src, sx, sy, sw, sh);
+async function detect(sess, src, sx, sy, sw, sh, conf, size) {
+  const { tensor, scale, px, py } = prep(src, sx, sy, sw, sh, size);
   const res = await sess.run({ [sess.inputNames[0]]: tensor });
   return postprocess(res[sess.outputNames[0]], scale, px, py, conf)
     .map(b => ({ ...b, x1: b.x1 + sx, x2: b.x2 + sx, y1: b.y1 + sy, y2: b.y2 + sy }));
@@ -610,7 +627,7 @@ async function detect(sess, src, sx, sy, sw, sh, conf) {
 // ขั้นที่ 1: หารถมอเตอร์ไซค์ + คน -> จับคู่คนที่ซ้อนอยู่บนรถ
 // ขั้นที่ 2: ตัดภาพคนขับ -> ตรวจหมวกกันน็อก
 async function analyze(video, W, H, conf) {
-  const veh = await detect(vehSession, video, 0, 0, W, H, 0.4);
+  const veh = await detect(vehSession, video, 0, 0, W, H, 0.4, VEH_SIZE);
   const bikes = veh.filter(d => d.cls === 3), persons = veh.filter(d => d.cls === 0);
   const riders = [];
   for (const p of persons) {
@@ -624,7 +641,7 @@ async function analyze(video, W, H, conf) {
     const x2 = Math.min(W, r.box.x2 + pw), y2 = Math.min(H, r.box.y2 + ph);
     r.status = "unknown"; r.score = 0;
     if (x2 - x1 < 24 || y2 - y1 < 24) continue;
-    const hd = await detect(session, video, x1, y1, x2 - x1, y2 - y1, conf);
+    const hd = await detect(session, video, x1, y1, x2 - x1, y2 - y1, conf, HEL_SIZE);
     if (hd.length) { r.status = CLASS_NAMES[hd[0].cls] === NO_HELMET ? "no" : "yes"; r.score = hd[0].score; }
   }
   return { bikes, riders };
@@ -661,13 +678,15 @@ function draw(cam, res) {
   const strong = riders.filter(r => r.status === "no" && r.score >= UNSURE_BELOW).length;
   const unsure = riders.filter(r => r.score < UNSURE_BELOW || r.status === "unknown").length;
   const now = Date.now();
-  if (strong && $("saveNo").checked && now - cam.last.no > 3000) { cam.last.no = now; snap(cam, "no", strong); }
-  else if (unsure && $("saveUnsure").checked && now - cam.last.unsure > 5000) { cam.last.unsure = now; snap(cam, "unsure", unsure); }
+  const snapMs = parseInt($("snapGap").value, 10) || 2000;
+  if (strong && $("saveNo").checked && now - cam.last.no > snapMs) { cam.last.no = now; snap(cam, "no", strong); }
+  else if (unsure && $("saveUnsure").checked && now - cam.last.unsure > snapMs) { cam.last.unsure = now; snap(cam, "unsure", unsure); }
   if (bad && $("beep").checked && now - lastBeep > 3000) { lastBeep = now; beep(); }
 }
 
 // สรุปผลรวมทุกกล้อง
 function summarize() {
+  if (!cams.length) return;     // ปิดกล้องหมดแล้ว ไม่ต้องอัปเดตสถานะทับ
   const ok = cams.reduce((s, c) => s + c.ok, 0), bad = cams.reduce((s, c) => s + c.bad, 0);
   $("nHelmet").textContent = ok; $("nNo").textContent = bad;
   const badCams = cams.filter(c => c.bad).map(c => c.name);
@@ -722,7 +741,7 @@ $("modelFile").onchange = async e => {
 };
 
 // ===== บันทึกภาพ =====
-const MAX_SHOTS = 60, UNSURE_BELOW = 0.6;
+const MAX_SHOTS = 100, UNSURE_BELOW = 0.6;
 let shots = [], lastSnap = { no: 0, unsure: 0 }, idb = null, toastT = 0;
 const KIND_TH = { no: "ไม่สวมหมวก", unsure: "ไม่มั่นใจ" };
 
@@ -833,7 +852,7 @@ function modelsReady() { return !!(session && ($("tMode").value === "helmet" || 
 
 // โหมดเฉพาะหมวก: ส่งทั้งภาพเข้าโมเดลหมวกโดยตรง (ไม่ต้องหารถ)
 async function analyzeHelmetOnly(src, W, H, conf) {
-  const hd = await detect(session, src, 0, 0, W, H, conf);
+  const hd = await detect(session, src, 0, 0, W, H, conf, HEL_SIZE);
   return { bikes: [], riders: hd.map(d => ({ box: d, status: CLASS_NAMES[d.cls] === NO_HELMET ? "no" : "yes", score: d.score })) };
 }
 function runAnalyze(src, W, H, conf) {
