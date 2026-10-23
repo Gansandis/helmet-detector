@@ -419,16 +419,28 @@ if (window.ort) {
   ort.env.wasm.proxy = !window.USE_GPU;   // โหมดปกติ: รันใน worker หน้าเว็บจะไม่ค้าง (โหมด GPU ใช้ worker ไม่ได้)
   ort.env.wasm.numThreads = Math.min(4, navigator.hardwareConcurrency || 1);
 }
+let gpuChecked = null;
+async function gpuUsable() {                       // เครื่องมี GPU ที่เบราว์เซอร์เปิดให้ใช้จริงหรือไม่
+  if (gpuChecked === null) {
+    try { gpuChecked = !!(await navigator.gpu.requestAdapter()); } catch { gpuChecked = false; }
+  }
+  return gpuChecked;
+}
 async function makeSession(src) {
-  const gpu = !!window.USE_GPU;
+  let gpu = !!window.USE_GPU;
+  if (gpu && !(await gpuUsable())) {               // ขอเปิด GPU ไว้ แต่เครื่องนี้ไม่มี GPU ที่ใช้ได้: ใช้โหมดปกติ
+    window.USE_GPU = false; gpu = false; ort.env.wasm.proxy = true;
+    $("chipGpu").hidden = true; $("useGpu").checked = false;
+    setStatus("เครื่องนี้ไม่มี GPU ที่เบราว์เซอร์เปิดให้ใช้ (WebGPU) จึงใช้โหมดปกติแทน");
+  }
   try { return await ort.InferenceSession.create(src, { executionProviders: gpu ? ["webgpu", "wasm"] : ["wasm"] }); }
   catch (e) {
-    if (gpu) {                                   // GPU ใช้ไม่ได้: ถอยไปโหมดปกติ
+    if (gpu) {                                     // GPU ใช้ไม่ได้: ถอยไปโหมดปกติ
       window.USE_GPU = false; $("chipGpu").hidden = true; ort.env.wasm.proxy = true;
       return await ort.InferenceSession.create(src, { executionProviders: ["wasm"] });
     }
     if (!ort.env.wasm.proxy) throw e;
-    ort.env.wasm.proxy = false;                  // ลองใหม่แบบไม่ใช้ worker
+    ort.env.wasm.proxy = false;                    // ลองใหม่แบบไม่ใช้ worker
     return await ort.InferenceSession.create(src, { executionProviders: ["wasm"] });
   }
 }
@@ -752,6 +764,7 @@ function sysinfo() {
   const iso = self.crossOriginIsolated, th = iso && window.ort ? ort.env.wasm.numThreads : 1;
   const r = lastRes;
   $("sysinfo").textContent = `ข้อมูลระบบ · ประมวลผล ${th} เธรด${iso ? "" : " (เว็บนี้ยังไม่เปิดโหมดหลายแกน)"} · ขนาดโมเดล รถ ${VEH_SIZE} หมวก ${HEL_SIZE} · GPU ${window.USE_GPU ? "เปิด" : "ปิด"}`
+    + (window.USE_GPU && r && r.ms1 > 1200 ? " · ⚠ ยังช้าเหมือนใช้ CPU อาจไม่ได้ใช้ GPU จริง ลองปิดโหมด GPU" : "")
     + (r ? ` · เวลาต่อรอบ: หารถ ${r.ms1 ? Math.round(r.ms1) + " ms" : "ใช้ผลเก่า"}, ตรวจหมวก ${Math.round(r.ms2)} ms (${r.n2} คน), รวม ${Math.round(r.ms)} ms` : "");
 }
 function summarize() {
