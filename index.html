@@ -427,9 +427,10 @@ if (!window.ort && window.ORT_VER !== window.ORT_DEF) {      // เวอร์�
   try { localStorage.setItem("ortVer", window.ORT_DEF); } catch {}
   location.reload();
 }
+const GPU_BUNDLE = !!window.USE_GPU;        // ชุดที่โหลดมาเป็นแบบ GPU หรือไม่ (ชุด GPU ใช้ worker proxy ไม่ได้)
 if (window.ort) {
   ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@" + window.ORT_VER + "/dist/";
-  ort.env.wasm.proxy = !window.USE_GPU;   // โหมดปกติ: รันใน worker หน้าเว็บจะไม่ค้าง (โหมด GPU ใช้ worker ไม่ได้)
+  ort.env.wasm.proxy = !GPU_BUNDLE;   // โหมดปกติ: รันใน worker หน้าเว็บจะไม่ค้าง
   ort.env.wasm.numThreads = Math.min(4, navigator.hardwareConcurrency || 1);
 }
 let gpuChecked = null;
@@ -440,7 +441,7 @@ async function gpuUsable() {                       // เครื่องม�
   return gpuChecked;
 }
 function noGpu(msg) {
-  window.USE_GPU = false; ort.env.wasm.proxy = true;
+  window.USE_GPU = false;
   $("chipGpu").hidden = true; $("useGpu").checked = false;
   try { localStorage.setItem("useGpu", "0"); } catch {}
   setStatus(msg);
@@ -448,7 +449,10 @@ function noGpu(msg) {
 async function makeSession(src) {
   if (window.USE_GPU && !(await gpuUsable())) noGpu("เครื่องนี้ไม่มี GPU ที่เบราว์เซอร์เปิดให้ใช้ (WebGPU) จึงใช้โหมดปกติแทน");
   if (window.USE_GPU) {
-    try { return await ort.InferenceSession.create(src, { executionProviders: ["webgpu"] }); }   // ระบุ GPU อย่างเดียว จะได้ไม่ถอยไป CPU แบบเงียบ ๆ
+    try {                                                       // ระบุ GPU อย่างเดียว จะได้ไม่ถอยไป CPU แบบเงียบ ๆ และตั้งเวลาไว้กันค้าง
+      const limit = new Promise((_, rej) => setTimeout(() => rej(new Error("รอ GPU นานเกินไป")), window.GPU_TIMEOUT || 25000));
+      return await Promise.race([ort.InferenceSession.create(src, { executionProviders: ["webgpu"] }), limit]);
+    }
     catch (e) { noGpu("เปิดโหมด GPU ไม่สำเร็จกับเวอร์ชันตัวประมวลผลนี้ (" + ((e && e.message) || e) + ") จึงใช้โหมดปกติแทน ลองเปลี่ยนเวอร์ชันตัวประมวลผลในตั้งค่า"); }
   }
   const opt = { executionProviders: ["wasm"] };
@@ -499,21 +503,29 @@ function setStatus(t) { $("msg").textContent = t; }
 function chip(id, state) { $(id).dataset.state = state; const t = $("t" + id.charAt(0).toUpperCase() + id.slice(1)); if (t) t.dataset.state = state; }
 function setLine(kind, text) { const l = $("line"); l.dataset.kind = kind; $("lineText").textContent = text; }
 
+function loadFailed(which, file, e) {
+  const why = (e && e.message) ? e.message : String(e);
+  if (GPU_BUNDLE) {                                  // โหลดชุด GPU มาแล้วล้ม: ปิด GPU แล้วโหลดหน้าใหม่ให้เอง
+    try { localStorage.setItem("useGpu", "0"); } catch {}
+    setLine("err", "โหมด GPU ใช้ไม่ได้บนเครื่องนี้ (" + why.slice(0, 80) + ") กำลังกลับโหมดปกติ…");
+    setStatus("โหลดโมเดล" + which + "ไม่สำเร็จในโหมด GPU: " + why);
+    setTimeout(() => location.reload(), 1800);
+    return;
+  }
+  setStatus("โหลดโมเดล" + which + "ไม่สำเร็จ: " + why + " (ตรวจสอบว่ามีไฟล์ " + file + " อยู่ข้าง index.html)");
+}
 async function loadModel(source) {
   chip("chipHel", "loading");
   try {
     session = await makeSession(source);
     HEL_SIZE = await probeSize(session, HEL_SIZE);
     chip("chipHel", "ready");
-  } catch (e) {
-    session = null; chip("chipHel", "error");
-    setStatus("โหลดโมเดลหมวกไม่สำเร็จ: ตรวจสอบว่ามีไฟล์ " + MODEL_URL + " อยู่ข้าง index.html หรือเลือกไฟล์ .onnx ในหน้าตั้งค่า");
-  }
+  } catch (e) { session = null; chip("chipHel", "error"); loadFailed("หมวก", MODEL_URL, e); }
 }
 async function loadVeh() {
   chip("chipVeh", "loading");
   try { vehSession = await makeSession(VEH_URL); VEH_SIZE = await probeSize(vehSession, VEH_SIZE); chip("chipVeh", "ready"); }
-  catch (e) { vehSession = null; chip("chipVeh", "error"); setStatus("โหลดโมเดลจับรถไม่สำเร็จ: ตรวจสอบว่ามีไฟล์ " + VEH_URL + " อยู่ข้าง index.html"); }
+  catch (e) { vehSession = null; chip("chipVeh", "error"); loadFailed("จับรถ", VEH_URL, e); }
 }
 
 // ===== กล้อง =====
