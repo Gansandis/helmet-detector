@@ -69,7 +69,7 @@
   .tile[data-state="bad"] { border-color:var(--bad); }
   .view { position:relative; background:#000; aspect-ratio:4/3; }
   .view video, .view canvas { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; }
-  .badge { position:absolute; left:0; top:0; background:rgba(0,0,0,.7); color:#fff; padding:4px 12px; border-radius:0 0 10px 0; font-size:.85rem; }
+  .badge { max-width:100%; position:absolute; left:0; top:0; background:rgba(0,0,0,.7); color:#fff; padding:4px 12px; border-radius:0 0 10px 0; font-size:.85rem; }
   .tile[data-state="bad"] .badge { background:var(--bad); }
   .bar { display:flex; gap:8px; padding:8px; }
   .bar select { flex:1; min-width:0; min-height:40px; border-radius:10px; border:1px solid var(--line); background:var(--surface); padding:0 10px; }
@@ -248,6 +248,24 @@
             <option value="700">ประหยัด (เหมาะกับมือถือเก่า)</option>
           </select>
         </label>
+        <label>โหมดตรวจ
+          <select id="liveMode" class="cam" style="min-height:44px">
+            <option value="rider" selected>ผู้ขับขี่บนมอเตอร์ไซค์ (จับรถก่อน)</option>
+            <option value="person">ทุกคนที่เห็นในภาพ (ไม่ต้องเห็นรถ)</option>
+            <option value="helmet">เฉพาะหมวก ส่งทั้งภาพ (เร็วสุด เหมาะระยะใกล้)</option>
+          </select>
+        </label>
+        <label>ตรวจหารถ/คนใหม่ทุก
+          <select id="s1every" class="cam" style="min-height:44px">
+            <option value="1" selected>ทุกรอบ (แม่นสุด)</option>
+            <option value="2">ทุก 2 รอบ</option>
+            <option value="3">ทุก 3 รอบ (เร็วขึ้น เหมาะรถที่ขยับช้า)</option>
+          </select>
+        </label>
+        <label>ความไวจับรถ/คน: <b id="vconfVal">0.30</b>
+          <input id="vconf" type="range" min="0.1" max="0.6" step="0.05" value="0.3">
+          <span style="color:var(--muted);font-size:.85rem">ค่าต่ำจะจับคนและรถที่อยู่ไกลหรือเล็กได้มากขึ้น แต่อาจจับผิดมากขึ้น</span>
+        </label>
         <label class="inline" id="gpuRow"><input id="useGpu" type="checkbox"> เร่งความเร็วด้วย GPU (ทดลอง)</label>
         <span id="gpuNote" style="color:var(--muted);font-size:.85rem;margin-top:-8px">ใช้การ์ดจอของเครื่องช่วยตรวจ อาจเร็วขึ้นหลายเท่า แต่บางเครื่องหรือเบราว์เซอร์ใช้ไม่ได้ ถ้าเกิดข้อผิดพลาดระบบจะปิดโหมดนี้ให้เอง</span>
         <label>บันทึกภาพไม่ถี่เกินกว่า
@@ -266,6 +284,7 @@
         </label>
       </div>
       <p class="msg" id="msg"></p>
+      <p id="sysinfo" style="padding:0 16px 16px;margin:0;color:var(--muted);font-size:.82rem;word-break:break-word"></p>
     </details>
   </section>
 
@@ -659,17 +678,25 @@ async function detect(sess, src, sx, sy, sw, sh, conf, size) {
 
 // ขั้นที่ 1: หารถมอเตอร์ไซค์ + คน -> จับคู่คนที่ซ้อนอยู่บนรถ
 // ขั้นที่ 2: ตัดภาพคนขับ -> ตรวจหมวกกันน็อก
-async function analyze(video, W, H, conf) {
-  const veh = await detect(vehSession, video, 0, 0, W, H, 0.4, VEH_SIZE);
+async function analyze(video, W, H, conf, opts = {}) {
+  const mode = opts.mode || "rider", vconf = opts.vconf || 0.3;
+  if (mode === "helmet") return analyzeHelmetOnly(video, W, H, conf);   // ส่งทั้งภาพเข้าโมเดลหมวก ไม่ต้องหารถ
+  const cam = opts.cam, every = opts.every || 1;
+  const tA = performance.now();
+  let veh, cached = false;
+  if (cam && every > 1 && cam.s1 && cam.s1age < every - 1) { veh = cam.s1; cam.s1age++; cached = true; }   // ใช้ผลหารถรอบก่อน
+  else { veh = await detect(vehSession, video, 0, 0, W, H, vconf, VEH_SIZE); if (cam) { cam.s1 = veh; cam.s1age = 0; } }
+  const ms1 = cached ? 0 : performance.now() - tA;
   const bikes = veh.filter(d => d.cls === 3), persons = veh.filter(d => d.cls === 0);
   const riders = [];
   for (const p of persons) {
     let bi = -1, bo = 0.25;
     bikes.forEach((b, i) => { const o = overlapOfA(p, b); if (o > bo) { bo = o; bi = i; } });
-    if (bi >= 0) riders.push({ box: p, bike: bi });
+    if (bi >= 0 || mode === "person") riders.push({ box: p, bike: bi });   // โหมด person: นับทุกคนที่เจอ
   }
+  const tB = performance.now(), grow = cached ? 0.25 : 0.1;      // ใช้ผลเก่า: ขยายกรอบเผื่อคนขยับ
   for (const r of riders.slice(0, 6)) {
-    const pw = (r.box.x2 - r.box.x1) * 0.1, ph = (r.box.y2 - r.box.y1) * 0.1;
+    const pw = (r.box.x2 - r.box.x1) * grow, ph = (r.box.y2 - r.box.y1) * grow;
     const x1 = Math.max(0, r.box.x1 - pw), y1 = Math.max(0, r.box.y1 - ph);
     const x2 = Math.min(W, r.box.x2 + pw), y2 = Math.min(H, r.box.y2 + ph);
     r.status = "unknown"; r.score = 0;
@@ -677,7 +704,7 @@ async function analyze(video, W, H, conf) {
     const hd = await detect(session, video, x1, y1, x2 - x1, y2 - y1, conf, HEL_SIZE);
     if (hd.length) { r.status = CLASS_NAMES[hd[0].cls] === NO_HELMET ? "no" : "yes"; r.score = hd[0].score; }
   }
-  return { bikes, riders };
+  return { bikes, riders, persons: persons.length, ms1, ms2: performance.now() - tB, n2: Math.min(riders.length, 6), cached };
 }
 
 // วาดกรอบลงบน canvas (ใช้ร่วมกันทั้งกล้องและหน้าทดสอบ)
@@ -704,9 +731,10 @@ function paint(ctx, canvas, { bikes, riders }) {
 function draw(cam, res) {
   const { riders } = res;
   const { ok, bad } = paint(cam.ctx, cam.canvas, res);
-  cam.ok = ok; cam.bad = bad; cam.riders = riders.length;
+  cam.ok = ok; cam.bad = bad; cam.riders = riders.length; lastRes = res;
   cam.tile.dataset.state = bad ? "bad" : ok ? "ok" : "run";
   cam.badge.textContent = cam.name + " · " + (bad ? "ไม่สวมหมวก " + bad : ok ? "สวมหมวก " + ok : riders.length ? "ดูหมวกไม่ชัด" : "ไม่พบผู้ขับขี่")
+    + (res.persons != null ? " · รถ " + res.bikes.length + " คน " + res.persons : "")
     + (res.ms > 1500 ? " · ผลล่าช้า " + Math.round(res.ms / 1000) + " วิ" : "");
 
   const strong = riders.filter(r => r.status === "no" && r.score >= UNSURE_BELOW).length;
@@ -719,7 +747,15 @@ function draw(cam, res) {
 }
 
 // สรุปผลรวมทุกกล้อง
+let lastRes = null;
+function sysinfo() {
+  const iso = self.crossOriginIsolated, th = iso && window.ort ? ort.env.wasm.numThreads : 1;
+  const r = lastRes;
+  $("sysinfo").textContent = `ข้อมูลระบบ · ประมวลผล ${th} เธรด${iso ? "" : " (เว็บนี้ยังไม่เปิดโหมดหลายแกน)"} · ขนาดโมเดล รถ ${VEH_SIZE} หมวก ${HEL_SIZE} · GPU ${window.USE_GPU ? "เปิด" : "ปิด"}`
+    + (r ? ` · เวลาต่อรอบ: หารถ ${r.ms1 ? Math.round(r.ms1) + " ms" : "ใช้ผลเก่า"}, ตรวจหมวก ${Math.round(r.ms2)} ms (${r.n2} คน), รวม ${Math.round(r.ms)} ms` : "");
+}
 function summarize() {
+  sysinfo();
   if (!cams.length) return;     // ปิดกล้องหมดแล้ว ไม่ต้องอัปเดตสถานะทับ
   const ok = cams.reduce((s, c) => s + c.ok, 0), bad = cams.reduce((s, c) => s + c.bad, 0);
   $("nHelmet").textContent = ok; $("nNo").textContent = bad;
@@ -746,11 +782,12 @@ async function loop() {
     while (cams.length) {
       const round = performance.now(); let did = false;
       for (const cam of cams.slice()) {
-        if (!cam.ready || cam.video.readyState < 2 || !session || !vehSession || !cams.includes(cam)) continue;
+        const mode = $("liveMode").value;
+        if (!cam.ready || cam.video.readyState < 2 || !session || (mode !== "helmet" && !vehSession) || !cams.includes(cam)) continue;
         const t1 = performance.now(), W = cam.video.videoWidth, H = cam.video.videoHeight;
         const frame = document.createElement("canvas"); frame.width = W; frame.height = H;
         frame.getContext("2d").drawImage(cam.video, 0, 0, W, H);       // เก็บเฟรมที่กำลังตรวจไว้ ให้ภาพที่บันทึกตรงกับผลตรวจ
-        const res = await analyze(frame, W, H, parseFloat($("conf").value));
+        const res = await analyze(frame, W, H, parseFloat($("conf").value), { mode, vconf: parseFloat($("vconf").value), cam, every: parseInt($("s1every").value, 10) || 1 });
         res.frame = frame; res.ms = performance.now() - t1;
         if (!cams.includes(cam)) continue;      // ถูกปิดระหว่างประมวลผล
         draw(cam, res); did = true; frames++;
@@ -790,6 +827,7 @@ async function loop() {
 
 $("addBtn").onclick = addCamera;
 $("stopBtn").onclick = stopAll;
+$("vconf").oninput = e => $("vconfVal").textContent = parseFloat(e.target.value).toFixed(2);
 $("conf").oninput = e => $("confVal").textContent = parseFloat(e.target.value).toFixed(2);
 $("modelFile").onchange = async e => {
   const f = e.target.files[0];
@@ -1026,6 +1064,7 @@ function showTab(name, push) {
 tabBtns.forEach(t => t.onclick = () => showTab(t.dataset.tab, true));
 showTab(location.hash.slice(1) || "detect", false);
 
+sysinfo();
 updateControls();
 loadVeh();
 loadModel(MODEL_URL);
